@@ -1,0 +1,151 @@
+###############################################################################
+# Vivado / Xilinx projects (.xpr/.xise) - ignore generated outputs & caches
+# Keep: sources (.v/.sv/.vhd), constraints (.xdc), scripts (.tcl), IP defs as desired
+###############################################################################
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*~
+.vscode/
+.idea/
+
+# --- Vivado "junk" directories (re-generated) ---
+# Main generated folders
+kv260.cache/
+kv260.hw/
+kv260.ip_user_files/
+kv260.sim/
+kv260.runs/
+kv260.gen/
+kv260.srcs/*/bd/*/hw_handoff/
+.Xil/
+
+# Common alternate/output dirs people create
+build/
+out/
+output/
+reports/
+results/
+
+# --- Vivado logs / journals ---
+*.log
+*.jou
+*.str
+*.pid
+*.wdb
+*.wcfg
+*.protoinst
+
+# --- Simulation / compilation outputs (various) ---
+xsim.dir/
+xcelium.d/
+vcsmx/
+csrc/
+simv*
+ucli.key
+work/
+transcript
+vsim.wlf
+*.vcd
+*.fst
+*.lxt
+*.lxt2
+*.ghw
+*.asdb
+*.ucdb
+
+# --- Synthesis / implementation intermediate artifacts ---
+*.dcp
+*.rpt
+*.pb
+*.xml
+*.html
+
+# --- Bitstreams / programming files (usually build outputs) ---
+*.bit
+*.bin
+*.ltx
+*.mcs
+*.prm
+*.svf
+*.pdi
+
+# --- Exported hardware / platform files (often generated) ---
+*.hdf
+*.hwh
+*.xsa
+
+# --- SDK / Vitis / SW exports from Vivado (generated) ---
+*.elf
+*.map
+*.o
+*.a
+*.d
+*.dep
+*.su
+*.lst
+
+# --- HLS (if used) ---
+*.csynth.rpt
+*.cosim.rpt
+solution*/
+.syn/
+impl/
+sim/
+
+# --- Petalinux / Yocto build outputs (if present) ---
+tmp/
+downloads/
+sstate-cache/
+images/
+build/
+*.wic
+
+###############################################################################
+# OPTIONAL: if you do NOT want to track the Vivado project file itself,
+# uncomment these. (Recommended approach: recreate project from TCL.)
+###############################################################################
+*.xpr
+*.xpr.user
+*.xpj
+*.data/
+
+###############################################################################
+# OPTIONAL: IP handling
+# If you want "rebuildable" repos, track only IP XCI + scripts, ignore products.
+###############################################################################
+
+# IP generated products (safe to ignore; will be regenerated)
+*.dcp
+*.veo
+*.vho
+*.edf
+*.edn
+*.ngc
+*.xci.lock
+*_ip/
+ip/
+ipshared/
+
+# Block design outputs (generated)
+kv260.srcs/*/bd/*/ip/
+kv260.srcs/*/bd/*/hdl/
+kv260.srcs/*/bd/*/synth_stream/
+kv260.srcs/*/bd/*/sim/
+
+###############################################################################
+# What you typically DO track (no need to list, just don't ignore):
+# - HDL: .v .sv .vhd .vh .svh
+# - Constraints: .xdc
+# - IP definitions (team choice): .xci and/or .bd (the .bd is a source)
+# - Project recreation scripts: .tcl (create_project, add_files, set_property…)
+# - Docs/configs: README, scripts/, etc.
+###############################################################################
+
+# My own simulation files
+*.evt
+*.binframe
