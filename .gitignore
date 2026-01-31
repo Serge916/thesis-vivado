@@ -39,6 +39,7 @@ results/
 *.wdb
 *.wcfg
 *.protoinst
+*.ui
 
 # --- Simulation / compilation outputs (various) ---
 xsim.dir/
