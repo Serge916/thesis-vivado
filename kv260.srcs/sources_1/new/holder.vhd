@@ -57,7 +57,33 @@ architecture rtl of axis_event_spacer is
     signal out_fire : std_logic;
     signal in_fire : std_logic;
 
+    -- endianess swap
+    signal in_data_sw : std_logic_vector(G_TDATA_W - 1 downto 0);
+
+    function f_rev_bytes(d : std_logic_vector) return std_logic_vector is
+        constant W : natural := d'length;
+        constant B : natural := W/8;
+        variable r : std_logic_vector(W - 1 downto 0);
+    begin
+        -- reverse byte lanes: byte i <-> byte (B-1-i)
+        for i in 0 to B - 1 loop
+            r((i + 1) * 8 - 1 downto i * 8) := d((B - i) * 8 - 1 downto (B - 1 - i) * 8);
+        end loop;
+        return r;
+    end function;
+
+    function f_rev_keep(k : std_logic_vector) return std_logic_vector is
+        constant B : natural := k'length;
+        variable r : std_logic_vector(B - 1 downto 0);
+    begin
+        for i in 0 to B - 1 loop
+            r(i) := k(B - 1 - i);
+        end loop;
+        return r;
+    end function;
+
 begin
+    in_data_sw <= f_rev_bytes(s_axis_tdata);
     m_axis_tdata <= hold_data;
     m_axis_tkeep <= hold_keep;
     m_axis_tuser <= hold_user;
@@ -101,13 +127,13 @@ begin
                     when ST_IDLE =>
                         -- capture one incoming beat
                         if in_fire = '1' then
-                            hold_data <= s_axis_tdata;
-                            hold_keep <= s_axis_tkeep;
+                            hold_data <= f_rev_bytes(s_axis_tdata);
+                            hold_keep <= f_rev_keep(s_axis_tkeep);
                             hold_user <= s_axis_tuser;
                             hold_last <= s_axis_tlast;
                             hold_valid <= '1';
 
-                            hdr4 := s_axis_tdata(G_TDATA_W - 1 downto G_TDATA_W - 4);
+                            hdr4 := in_data_sw(G_TDATA_W - 1 downto G_TDATA_W - 4);
 
                             if hdr4 = x"8" then
                                 -- TIME HIGH: update & forward immediately (no extra spacing)
