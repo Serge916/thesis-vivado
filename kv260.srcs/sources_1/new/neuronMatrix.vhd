@@ -5,6 +5,7 @@ use ieee.std_logic_misc.all;
 
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
+use xil_defaultlib.neuronMatrix_reg_bank_pkg.all;
 
 entity neuronMatrix is
     generic (
@@ -36,8 +37,12 @@ entity neuronMatrix is
         m_axis_tdata : out std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
         m_axis_tkeep : out std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
         m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
-        m_axis_tlast : out std_logic
+        m_axis_tlast : out std_logic;
 
+        -- Parameter Inputs
+        excitation_factor_i : in std_logic_vector(31 downto 0);
+        spike_accumulation_limit_i : in std_logic_vector(31 downto 0);
+        decay_counter_limit_i : in std_logic_vector(31 downto 0)
     );
 end entity neuronMatrix;
 
@@ -47,7 +52,7 @@ architecture rtl of neuronMatrix is
     -- Y axis is 0 to 127
     -- signal route_y : unsigned(6 downto 0);
 
-    signal spike_counter : natural range 0 to SPIKE_ACCUMULATION_LIMIT + 8; --+8 to account for a whole new burst
+    signal spike_counter : unsigned(31 downto 0) := (others => '0'); -- To account for a whole new burst, counter should be 8 units bigger than limit
     signal spike_counter_hit : std_logic := '0';
 
     constant INITIAL_WORD : unsigned(MEMBRANE_POTENTIAL_SIZE - 1 downto 0) := (others => '0');
@@ -379,10 +384,11 @@ begin
                                     spike(i) := '0';
                                 end if;
 
-                                -- If it is all 0, initialize it to 1. Else, shift 1 position to the left.
+                                -- If it is all 0, initialize it to 1. Else, shift EXCITATION_FACTOR position to the left.
                                 if cell = INITIAL_WORD then
                                     cell := to_unsigned(1, MEMBRANE_POTENTIAL_SIZE);
                                 else
+                                    -- cell := cell sll to_integer(unsigned(excitation_factor_i));
                                     cell := cell sll 1;
                                 end if;
                                 -- report "i=" & integer'image(i) &
@@ -396,11 +402,12 @@ begin
                         spike_out <= spike or frame_row;
                         -- Trigger frame flushing. Check whether there is an operation ongoing with spike_counter_hit. It should be '0' if nothing is happening.
                         -- if spike_counter >= SPIKE_ACCUMULATION_LIMIT and flush_ongoing = '0' then
-                        if spike_counter >= SPIKE_ACCUMULATION_LIMIT then
+                        -- if spike_counter >= SPIKE_ACCUMULATION_LIMIT then
+                        if spike_counter >= unsigned(spike_accumulation_limit_i) then
                             spike_counter_hit <= '1';
-                            spike_counter <= 0;
+                            spike_counter <= (others => '0');
                         else
-                            spike_counter <= spike_counter + spike_accum;
+                            spike_counter <= spike_counter + to_unsigned(spike_accum, spike_counter'length);
                         end if;
                     end if;
 
@@ -719,6 +726,7 @@ begin
         if rising_edge(aclk) then
             case state is
                 when INTEGRATE =>
+                    -- if decay_counter = to_integer(unsigned(decay_counter_limit_i)) then
                     if decay_counter = DECAY_COUNTER_LIMIT then
                         decay_counter <= 0;
                         decay_counter_hit <= '1';

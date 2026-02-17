@@ -24,9 +24,11 @@ entity neuronMatrix_reg_bank is
         cfg_config_test_pattern_o : out std_logic_vector(0 downto 0);
         cfg_config_timeout_enable_o : out std_logic_vector(0 downto 0);
         -- DECAY_COUNTER_LIMIT Register
-        param_decay_counter_limit_o : out std_logic_vector(31 downto 0);
+        param_decay_counter_limit_o : out std_logic_vector(DECAY_COUNTER_LIMIT_WIDTH - 1 downto 0);
         -- SPIKE_ACCUMULATION_LIMIT Register
-        param_spike_accumulation_limit_o : out std_logic_vector(31 downto 0);
+        param_spike_accumulation_limit_o : out std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0);
+        -- EXCITATION_FACTOR Register
+        param_excitation_factor_o : out std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0);
 
         -- Slave AXI4-Lite Interface
         s_axi_aclk : in std_logic;
@@ -93,6 +95,8 @@ architecture rtl of neuronMatrix_reg_bank is
     -- SPIKE_ACCUMULATION_LIMIT Register
     signal param_spike_accumulation_limit_q : std_logic_vector(31 downto 0);
 
+    -- EXCITATION_FACTOR Register
+    signal param_excitation_factor_q : std_logic_vector(31 downto 0);
 begin
 
     -- AXI4-Lite output signals assignements
@@ -113,6 +117,7 @@ begin
     cfg_config_timeout_enable_o <= cfg_config_timeout_enable_q;
     param_decay_counter_limit_o <= param_decay_counter_limit_q;
     param_spike_accumulation_limit_o <= param_spike_accumulation_limit_q;
+    param_excitation_factor_o <= param_excitation_factor_q;
 
     ---------------------------
     -- Write address channel --
@@ -205,6 +210,7 @@ begin
                 cfg_config_timeout_enable_q <= CONFIG_TIMEOUT_ENABLE_DEFAULT;
                 param_decay_counter_limit_q <= DECAY_COUNTER_LIMIT_DEFAULT;
                 param_spike_accumulation_limit_q <= SPIKE_ACCUMULATION_LIMIT_DEFAULT;
+                param_excitation_factor_q <= EXCITATION_FACTOR_DEFAULT;
             else
                 -- Trigger Register (reset to default value every clock cycle)
                 if axi_awready = '1' then
@@ -220,6 +226,8 @@ begin
                             param_decay_counter_limit_q <= s_axi_wdata(DECAY_COUNTER_LIMIT_MSB downto DECAY_COUNTER_LIMIT_LSB);
                         when SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             param_spike_accumulation_limit_q <= s_axi_wdata(SPIKE_ACCUMULATION_LIMIT_MSB downto SPIKE_ACCUMULATION_LIMIT_LSB);
+                        when EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            param_excitation_factor_q <= s_axi_wdata(EXCITATION_FACTOR_MSB downto EXCITATION_FACTOR_LSB);
                         when others =>
                             -- Unknown address
                             cfg_control_enable_q <= cfg_control_enable_q;
@@ -229,6 +237,7 @@ begin
                             cfg_config_timeout_enable_q <= cfg_config_timeout_enable_q;
                             param_decay_counter_limit_q <= param_decay_counter_limit_q;
                             param_spike_accumulation_limit_q <= param_spike_accumulation_limit_q;
+                            param_excitation_factor_q <= param_excitation_factor_q;
                     end case;
                 end if;
             end if;
@@ -240,6 +249,7 @@ begin
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = CONTROL_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = DECAY_COUNTER_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
+        '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '0';
 
     ----------------------------
@@ -359,6 +369,8 @@ begin
                             axi_rdata(DECAY_COUNTER_LIMIT_MSB downto DECAY_COUNTER_LIMIT_LSB) <= param_decay_counter_limit_q;
                         when SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             axi_rdata(SPIKE_ACCUMULATION_LIMIT_MSB downto SPIKE_ACCUMULATION_LIMIT_LSB) <= param_spike_accumulation_limit_q;
+                        when EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            axi_rdata(EXCITATION_FACTOR_MSB downto EXCITATION_FACTOR_LSB) <= param_excitation_factor_q;
                         when others =>
                             -- unknown address
                             axi_rresp <= "10"; -- SLVERR

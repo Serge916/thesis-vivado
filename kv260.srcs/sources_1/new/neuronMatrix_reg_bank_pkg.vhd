@@ -42,7 +42,7 @@ package neuronMatrix_reg_bank_pkg is
     constant CONFIG_TIMEOUT_ENABLE_LSB : natural := 2;
     constant CONFIG_TIMEOUT_ENABLE_DEFAULT : std_logic_vector(CONFIG_TIMEOUT_ENABLE_WIDTH - 1 downto 0) := "0";
     -- VERSION Register
-    constant VERSION_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000010#, AXIL_ADDR_WIDTH));
+    constant VERSION_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000020#, AXIL_ADDR_WIDTH));
     constant VERSION_MINOR_WIDTH : natural := 16;
     constant VERSION_MINOR_MSB : natural := 15;
     constant VERSION_MINOR_LSB : natural := 0;
@@ -55,13 +55,19 @@ package neuronMatrix_reg_bank_pkg is
     constant DECAY_COUNTER_LIMIT_WIDTH : natural := 32;
     constant DECAY_COUNTER_LIMIT_MSB : natural := 31;
     constant DECAY_COUNTER_LIMIT_LSB : natural := 0;
-    constant DECAY_COUNTER_LIMIT_DEFAULT : std_logic_vector(DECAY_COUNTER_LIMIT_WIDTH - 1 downto 0) := x"00000800";
+    constant DECAY_COUNTER_LIMIT_DEFAULT : std_logic_vector(DECAY_COUNTER_LIMIT_WIDTH - 1 downto 0) := x"00989680";
     -- SPIKE_ACCUMULATION_LIMIT Register
     constant SPIKE_ACCUMULATION_LIMIT_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#0000000C#, AXIL_ADDR_WIDTH));
     constant SPIKE_ACCUMULATION_LIMIT_WIDTH : natural := 32;
     constant SPIKE_ACCUMULATION_LIMIT_MSB : natural := 31;
     constant SPIKE_ACCUMULATION_LIMIT_LSB : natural := 0;
-    constant SPIKE_ACCUMULATION_LIMIT_DEFAULT : std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0) := x"00989680";
+    constant SPIKE_ACCUMULATION_LIMIT_DEFAULT : std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0) := x"00000320";
+    -- EXCITATION_FACTOR Register
+    constant EXCITATION_FACTOR_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000010#, AXIL_ADDR_WIDTH));
+    constant EXCITATION_FACTOR_WIDTH : natural := 32;
+    constant EXCITATION_FACTOR_MSB : natural := 31;
+    constant EXCITATION_FACTOR_LSB : natural := 0;
+    constant EXCITATION_FACTOR_DEFAULT : std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0) := x"00000001";
 end neuronMatrix_reg_bank_pkg;
 
 ---------------------
