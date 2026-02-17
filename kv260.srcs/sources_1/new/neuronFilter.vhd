@@ -80,7 +80,7 @@ begin
       m_axis_tlast => tlast_cropper_matrix
     );
 
-  matrix : entity xil_defaultlib.neuronMatrix
+  matrix : entity xil_defaultlib.matrix
     generic map(
       AXIS_TDATA_WIDTH_G => AXIS_TDATA_WIDTH_G,
       AXIS_TUSER_WIDTH_G => AXIS_TUSER_WIDTH_G,
@@ -112,7 +112,7 @@ begin
       decay_counter_limit_i => decay_counter_limit_s
     );
 
-  reg : entity xil_defaultlib.neuronMatrix_reg_bank
+  reg : entity xil_defaultlib.filter_reg_bank
     port map(
       -- CONTROL Register
       cfg_control_enable_o => open,
