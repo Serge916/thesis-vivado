@@ -54,7 +54,7 @@ architecture rtl of matrix is
     signal spike_counter_hit : std_logic := '0';
 
     constant INITIAL_WORD : unsigned(MEMBRANE_POTENTIAL_SIZE - 1 downto 0) := (others => '0');
-    signal decay_counter : unsigned(31 downto 0) := (others => '0');
+    signal decay_counter : unsigned(31 downto 0) := unsigned(DECAY_COUNTER_LIMIT_DEFAULT);
     signal decay_counter_hit : std_logic;
 
     -- Signals for neuron state reading/writing
@@ -724,15 +724,15 @@ begin
         if rising_edge(aclk) then
             case state is
                 when INTEGRATE =>
-                    if decay_counter = unsigned(decay_counter_limit_i) then
-                        decay_counter <= (others => '0');
+                    if decay_counter = 0 then
+                        decay_counter <= unsigned(decay_counter_limit_i);
                         decay_counter_hit <= '1';
                     else
-                        decay_counter <= decay_counter + 1;
+                        decay_counter <= decay_counter - 1;
                         decay_counter_hit <= '0';
                     end if;
                 when others =>
-                    decay_counter <= (others => '0');
+                    decay_counter <= unsigned(decay_counter_limit_i);
                     decay_counter_hit <= '0';
 
             end case;

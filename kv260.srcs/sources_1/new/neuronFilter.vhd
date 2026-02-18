@@ -83,9 +83,7 @@ begin
   matrix : entity xil_defaultlib.matrix
     generic map(
       AXIS_TDATA_WIDTH_G => AXIS_TDATA_WIDTH_G,
-      AXIS_TUSER_WIDTH_G => AXIS_TUSER_WIDTH_G,
-      SPIKE_ACCUMULATION_LIMIT => SPIKE_ACCUMULATION_LIMIT
-
+      AXIS_TUSER_WIDTH_G => AXIS_TUSER_WIDTH_G
     )
     port map(
       -- Clock and Reset
