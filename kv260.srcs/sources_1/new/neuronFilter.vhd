@@ -48,6 +48,7 @@ architecture rtl of neuronFilter is
   signal excitation_factor_s : std_logic_vector(31 downto 0);
   signal spike_accumulation_limit_s : std_logic_vector(31 downto 0);
   signal decay_counter_limit_s : std_logic_vector(31 downto 0);
+  signal live_spike_accumulated_s : std_logic_vector(31 downto 0);
 
 begin
   cropper : entity xil_defaultlib.cropper
@@ -107,7 +108,8 @@ begin
       m_axis_tlast => m_axis_tlast,
       excitation_factor_i => excitation_factor_s,
       spike_accumulation_limit_i => spike_accumulation_limit_s,
-      decay_counter_limit_i => decay_counter_limit_s
+      decay_counter_limit_i => decay_counter_limit_s,
+      live_spike_accumulated_o => live_spike_accumulated_s
     );
 
   reg : entity xil_defaultlib.filter_reg_bank
@@ -125,6 +127,8 @@ begin
       param_spike_accumulation_limit_o => spike_accumulation_limit_s,
       -- EXCITATION_FACTOR Register
       param_excitation_factor_o => excitation_factor_s,
+      -- Live Spike Register
+      live_spike_accumulated_i => live_spike_accumulated_s,
 
       -- Slave AXI4-Lite Interface
       s_axi_aclk => aclk,

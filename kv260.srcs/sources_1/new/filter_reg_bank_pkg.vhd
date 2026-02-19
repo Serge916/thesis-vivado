@@ -68,6 +68,11 @@ package filter_reg_bank_pkg is
     constant EXCITATION_FACTOR_MSB : natural := 31;
     constant EXCITATION_FACTOR_LSB : natural := 0;
     constant EXCITATION_FACTOR_DEFAULT : std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0) := x"00000001";
+    -- SPIKE_ACCUMULATED Register
+    constant SPIKE_ACCUMULATED_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000014#, AXIL_ADDR_WIDTH));
+    constant SPIKE_ACCUMULATED_WIDTH : natural := 32;
+    constant SPIKE_ACCUMULATED_MSB : natural := 31;
+    constant SPIKE_ACCUMULATED_LSB : natural := 0;
 end filter_reg_bank_pkg;
 
 ---------------------

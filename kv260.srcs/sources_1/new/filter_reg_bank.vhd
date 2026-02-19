@@ -29,6 +29,8 @@ entity filter_reg_bank is
         param_spike_accumulation_limit_o : out std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0);
         -- EXCITATION_FACTOR Register
         param_excitation_factor_o : out std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0);
+        -- SPIKE_ACCUMULATED Register
+        live_spike_accumulated_i : in std_logic_vector(31 downto 0);
 
         -- Slave AXI4-Lite Interface
         s_axi_aclk : in std_logic;
@@ -371,6 +373,8 @@ begin
                             axi_rdata(SPIKE_ACCUMULATION_LIMIT_MSB downto SPIKE_ACCUMULATION_LIMIT_LSB) <= param_spike_accumulation_limit_q;
                         when EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             axi_rdata(EXCITATION_FACTOR_MSB downto EXCITATION_FACTOR_LSB) <= param_excitation_factor_q;
+                        when SPIKE_ACCUMULATED_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            axi_rdata(SPIKE_ACCUMULATED_MSB downto SPIKE_ACCUMULATED_LSB) <= live_spike_accumulated_i;
                         when others =>
                             -- unknown address
                             axi_rresp <= "10"; -- SLVERR

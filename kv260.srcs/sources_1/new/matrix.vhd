@@ -40,7 +40,10 @@ entity matrix is
         -- Parameter Inputs
         excitation_factor_i : in std_logic_vector(31 downto 0);
         spike_accumulation_limit_i : in std_logic_vector(31 downto 0);
-        decay_counter_limit_i : in std_logic_vector(31 downto 0)
+        decay_counter_limit_i : in std_logic_vector(31 downto 0);
+        -- Live Register Outputs
+        live_spike_accumulated_o : out std_logic_vector(31 downto 0)
+
     );
 end entity matrix;
 
@@ -278,6 +281,9 @@ begin
         variable decay_negative_cell : unsigned(MEMBRANE_POTENTIAL_SIZE - 1 downto 0);
         variable decay_positive_cell : unsigned(MEMBRANE_POTENTIAL_SIZE - 1 downto 0);
     begin
+        -- Set life reg outputs
+        live_spike_accumulated_o <= std_logic_vector(spike_counter);
+
         if rising_edge(aclk) then
 
             -- Defaults: no writes
@@ -296,7 +302,6 @@ begin
             negative_state.enb <= '0';
             positive_frame.enb <= '0';
             negative_frame.enb <= '0';
-
             -- Move signals to the next stage of registers
             for k in 1 to PIPE_STAGES_C loop
                 pipeStage(k) <= pipeStage(k - 1);
