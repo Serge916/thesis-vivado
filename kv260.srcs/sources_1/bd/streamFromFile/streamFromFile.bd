@@ -43,7 +43,8 @@
       "filter": {
         "cropper_0": "",
         "filter_reg_bank_0": "",
-        "matrix_0": ""
+        "matrix_0": "",
+        "util_vector_logic_0": ""
       }
     },
     "interface_ports": {
@@ -3699,6 +3700,20 @@
                 "right": "0"
               }
             }
+          },
+          "util_vector_logic_0": {
+            "vlnv": "xilinx.com:ip:util_vector_logic:2.0",
+            "xci_name": "streamFromFile_util_vector_logic_0_0",
+            "xci_path": "ip/streamFromFile_util_vector_logic_0_0/streamFromFile_util_vector_logic_0_0.xci",
+            "inst_hier_path": "filter/util_vector_logic_0",
+            "parameters": {
+              "C_OPERATION": {
+                "value": "and"
+              },
+              "C_SIZE": {
+                "value": "1"
+              }
+            }
           }
         },
         "interface_nets": {
@@ -3741,7 +3756,13 @@
               "aresetn",
               "cropper_0/aresetn",
               "filter_reg_bank_0/s_axi_aresetn",
-              "matrix_0/aresetn"
+              "util_vector_logic_0/Op2"
+            ]
+          },
+          "filter_reg_bank_0_cfg_control_global_reset_o": {
+            "ports": [
+              "filter_reg_bank_0/cfg_control_global_reset_o",
+              "util_vector_logic_0/Op1"
             ]
           },
           "filter_reg_bank_0_param_decay_counter_limit_o": {
@@ -3766,6 +3787,12 @@
             "ports": [
               "matrix_0/live_spike_accumulated_o",
               "filter_reg_bank_0/live_spike_accumulated_i"
+            ]
+          },
+          "util_vector_logic_0_Res": {
+            "ports": [
+              "util_vector_logic_0/Res",
+              "matrix_0/aresetn"
             ]
           }
         }

@@ -28,28 +28,15 @@ package filter_reg_bank_pkg is
     constant CONTROL_CLEAR_MSB : natural := 2;
     constant CONTROL_CLEAR_LSB : natural := 2;
     constant CONTROL_CLEAR_DEFAULT : std_logic_vector(CONTROL_CLEAR_WIDTH - 1 downto 0) := "0";
-    -- CONFIG Register
-    constant CONFIG_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000004#, AXIL_ADDR_WIDTH));
-    constant CONFIG_RESERVED_WIDTH : natural := 1;
-    constant CONFIG_RESERVED_MSB : natural := 0;
-    constant CONFIG_RESERVED_LSB : natural := 0;
-    constant CONFIG_TEST_PATTERN_WIDTH : natural := 1;
-    constant CONFIG_TEST_PATTERN_MSB : natural := 1;
-    constant CONFIG_TEST_PATTERN_LSB : natural := 1;
-    constant CONFIG_TEST_PATTERN_DEFAULT : std_logic_vector(CONFIG_TEST_PATTERN_WIDTH - 1 downto 0) := "0";
-    constant CONFIG_TIMEOUT_ENABLE_WIDTH : natural := 1;
-    constant CONFIG_TIMEOUT_ENABLE_MSB : natural := 2;
-    constant CONFIG_TIMEOUT_ENABLE_LSB : natural := 2;
-    constant CONFIG_TIMEOUT_ENABLE_DEFAULT : std_logic_vector(CONFIG_TIMEOUT_ENABLE_WIDTH - 1 downto 0) := "0";
-    -- VERSION Register
-    constant VERSION_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000020#, AXIL_ADDR_WIDTH));
-    constant VERSION_MINOR_WIDTH : natural := 16;
-    constant VERSION_MINOR_MSB : natural := 15;
-    constant VERSION_MINOR_LSB : natural := 0;
-    constant VERSION_MAJOR_WIDTH : natural := 16;
-    constant VERSION_MAJOR_MSB : natural := 31;
-    constant VERSION_MAJOR_LSB : natural := 16;
-
+    -- Status Register
+    constant STATUS_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000004#, AXIL_ADDR_WIDTH));
+    constant STATUS_WIDTH : natural := 2;
+    constant STATUS_MSB : natural := 1;
+    constant STATUS_LSB : natural := 0;
+    constant STATUS_INTEGRATE : std_logic_vector(STATUS_WIDTH - 1 downto 0) := "00";
+    constant STATUS_RESET : std_logic_vector(STATUS_WIDTH - 1 downto 0) := "01";
+    constant STATUS_FLUSH : std_logic_vector(STATUS_WIDTH - 1 downto 0) := "10";
+    constant STATUS_DECAY : std_logic_vector(STATUS_WIDTH - 1 downto 0) := "11";
     -- DECAY_COUNTER_LIMIT Register
     constant DECAY_COUNTER_LIMIT_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000008#, AXIL_ADDR_WIDTH));
     constant DECAY_COUNTER_LIMIT_WIDTH : natural := 32;
@@ -62,17 +49,39 @@ package filter_reg_bank_pkg is
     constant SPIKE_ACCUMULATION_LIMIT_MSB : natural := 31;
     constant SPIKE_ACCUMULATION_LIMIT_LSB : natural := 0;
     constant SPIKE_ACCUMULATION_LIMIT_DEFAULT : std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0) := x"00000320";
-    -- EXCITATION_FACTOR Register
-    constant EXCITATION_FACTOR_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000010#, AXIL_ADDR_WIDTH));
-    constant EXCITATION_FACTOR_WIDTH : natural := 32;
-    constant EXCITATION_FACTOR_MSB : natural := 31;
-    constant EXCITATION_FACTOR_LSB : natural := 0;
-    constant EXCITATION_FACTOR_DEFAULT : std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0) := x"00000001";
+    -- POTENTIAL_THRESHOLD Register
+    constant POTENTIAL_THRESHOLD_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000010#, AXIL_ADDR_WIDTH));
+    constant POTENTIAL_THRESHOLD_WIDTH : natural := 32;
+    constant POTENTIAL_THRESHOLD_MSB : natural := 31;
+    constant POTENTIAL_THRESHOLD_LSB : natural := 0;
+    constant POTENTIAL_THRESHOLD_DEFAULT : std_logic_vector(POTENTIAL_THRESHOLD_WIDTH - 1 downto 0) := x"00000007";
     -- SPIKE_ACCUMULATED Register
     constant SPIKE_ACCUMULATED_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000014#, AXIL_ADDR_WIDTH));
     constant SPIKE_ACCUMULATED_WIDTH : natural := 32;
     constant SPIKE_ACCUMULATED_MSB : natural := 31;
     constant SPIKE_ACCUMULATED_LSB : natural := 0;
+
+    -- VERSION Register
+    constant VERSION_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000020#, AXIL_ADDR_WIDTH));
+    constant VERSION_MINOR_WIDTH : natural := 16;
+    constant VERSION_MINOR_MSB : natural := 15;
+    constant VERSION_MINOR_LSB : natural := 0;
+    constant VERSION_MAJOR_WIDTH : natural := 16;
+    constant VERSION_MAJOR_MSB : natural := 31;
+    constant VERSION_MAJOR_LSB : natural := 16;
+    -- CONFIG Register
+    constant CONFIG_ADDR : std_logic_vector(AXIL_ADDR_WIDTH - 1 downto 0) := std_logic_vector(to_unsigned(16#00000024#, AXIL_ADDR_WIDTH));
+    constant CONFIG_RESERVED_WIDTH : natural := 1;
+    constant CONFIG_RESERVED_MSB : natural := 0;
+    constant CONFIG_RESERVED_LSB : natural := 0;
+    constant CONFIG_TEST_PATTERN_WIDTH : natural := 1;
+    constant CONFIG_TEST_PATTERN_MSB : natural := 1;
+    constant CONFIG_TEST_PATTERN_LSB : natural := 1;
+    constant CONFIG_TEST_PATTERN_DEFAULT : std_logic_vector(CONFIG_TEST_PATTERN_WIDTH - 1 downto 0) := "0";
+    constant CONFIG_TIMEOUT_ENABLE_WIDTH : natural := 1;
+    constant CONFIG_TIMEOUT_ENABLE_MSB : natural := 2;
+    constant CONFIG_TIMEOUT_ENABLE_LSB : natural := 2;
+    constant CONFIG_TIMEOUT_ENABLE_DEFAULT : std_logic_vector(CONFIG_TIMEOUT_ENABLE_WIDTH - 1 downto 0) := "0";
 end filter_reg_bank_pkg;
 
 ---------------------

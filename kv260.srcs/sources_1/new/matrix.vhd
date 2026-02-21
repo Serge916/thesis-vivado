@@ -19,7 +19,7 @@ entity matrix is
     port (
         -- Clock and Reset
         aclk : in std_logic;
-        aresetn : in std_logic;
+        reset_req_i : in std_logic;
 
         -- Input Data Stream
         s_axis_tready : out std_logic;
@@ -38,11 +38,12 @@ entity matrix is
         m_axis_tlast : out std_logic;
 
         -- Parameter Inputs
-        excitation_factor_i : in std_logic_vector(31 downto 0);
+        potential_threshold_i : in std_logic_vector(31 downto 0);
         spike_accumulation_limit_i : in std_logic_vector(31 downto 0);
         decay_counter_limit_i : in std_logic_vector(31 downto 0);
         -- Live Register Outputs
-        live_spike_accumulated_o : out std_logic_vector(31 downto 0)
+        live_spike_accumulated_o : out std_logic_vector(31 downto 0);
+        live_status_o : out std_logic_vector(31 downto 0)
 
     );
 end entity matrix;
@@ -260,7 +261,6 @@ begin
         addrb => positive_state.addrb,
         doutb => positive_state.doutb
     );
-
     s_axis_tready <= axi_in_ready;
     axi_in_hs <= s_axis_tvalid and axi_in_ready;
     axi_out_hs <= m_axis_tready and axi_out_valid;
@@ -271,7 +271,7 @@ begin
     m_axis_tuser <= (others => '1');
     m_axis_tlast <= axi_out_last;
 
-    pipeline : process (aclk, aresetn)
+    pipeline : process (aclk, reset_req_i)
         variable cell : unsigned(MEMBRANE_POTENTIAL_SIZE - 1 downto 0);
         variable spike : std_logic_vector(NEURONS_PER_CLUSTER - 1 downto 0);
         variable spike_accum : integer range 0 to NEURONS_PER_CLUSTER;
@@ -379,20 +379,19 @@ begin
                                 -- extract this neuron
                                 cell := unsigned(word_in((i + 1) * MEMBRANE_POTENTIAL_SIZE - 1 downto i * MEMBRANE_POTENTIAL_SIZE));
 
-                                -- If last bit is 1, fire a spike
-                                if cell(MEMBRANE_POTENTIAL_SIZE - 1) = '1' then
+                                -- If MEMBRANE_THRESHOLD bit is 1, fire a spike
+                                if cell(to_integer(unsigned(potential_threshold_i))) = '1' then
                                     spike(i) := '1';
                                     spike_accum := spike_accum + 1;
                                 else
                                     spike(i) := '0';
                                 end if;
 
-                                -- If it is all 0, initialize it to 1. Else, shift EXCITATION_FACTOR position to the left.
+                                -- If it is all 0, initialize it to 1. Else, shift 1 position to the left.
                                 if cell = INITIAL_WORD then
                                     cell := to_unsigned(1, MEMBRANE_POTENTIAL_SIZE);
                                 else
-                                    cell := cell sll to_integer(unsigned(excitation_factor_i));
-                                    -- cell := cell sll 1;
+                                    cell := cell sll 1;
                                 end if;
                                 -- report "i=" & integer'image(i) &
                                 --     " cell=" & integer'image(to_integer(cell)) &
@@ -553,7 +552,7 @@ begin
                     end if;
                 when RESET =>
                     -- RESET goes address by address setting everything to the initial value
-                    if prev_state = FLUSH then
+                    if prev_state /= RESET then
                         reset_ongoing <= '1';
                         reset_address <= 0;
                         reset_chanIdx <= NEGATIVE_CHANNEL;
@@ -745,33 +744,40 @@ begin
     end process;
 
     -- TODO: Rework this whole thing
-    FSM : process (aclk, aresetn)
+    FSM : process (aclk, reset_req_i)
     begin
         if rising_edge(aclk) then
             prev_state <= state;
             state <= state;
+            live_status_o <= (others => '0');
             case state is
                 when INTEGRATE =>
-                    if aresetn = '0' then
-                        -- state <= RESET;
+                    live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_INTEGRATE;
+                    if reset_req_i = '1' then
+                        state <= RESET;
                     elsif decay_counter_hit = '1' then
                         state <= DECAY;
                     elsif spike_counter_hit = '1' then
                         state <= FLUSH;
                     end if;
                 when FLUSH =>
-                    if aresetn = '0' then
+                    live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_FLUSH;
+                    if reset_req_i = '1' then
                         state <= RESET;
                     elsif flush_ongoing = '0' and prev_state = FLUSH then
                         state <= RESET;
                     end if;
                 when DECAY =>
-                    if decay_ongoing = '0' and prev_state = DECAY then
+                    live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_DECAY;
+                    if reset_req_i = '1' then
+                        state <= RESET;
+                    elsif decay_ongoing = '0' and prev_state = DECAY then
                         state <= INTEGRATE;
                     else
                         state <= DECAY;
                     end if;
                 when RESET =>
+                    live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_RESET;
                     if reset_ongoing = '0' and prev_state = RESET then
                         state <= INTEGRATE;
                     else

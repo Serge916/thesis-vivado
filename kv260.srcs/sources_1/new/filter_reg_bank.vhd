@@ -27,10 +27,12 @@ entity filter_reg_bank is
         param_decay_counter_limit_o : out std_logic_vector(DECAY_COUNTER_LIMIT_WIDTH - 1 downto 0);
         -- SPIKE_ACCUMULATION_LIMIT Register
         param_spike_accumulation_limit_o : out std_logic_vector(SPIKE_ACCUMULATION_LIMIT_WIDTH - 1 downto 0);
-        -- EXCITATION_FACTOR Register
-        param_excitation_factor_o : out std_logic_vector(EXCITATION_FACTOR_WIDTH - 1 downto 0);
+        -- POTENTIAL_THRESHOLD Register
+        param_potential_threshold_o : out std_logic_vector(POTENTIAL_THRESHOLD_WIDTH - 1 downto 0);
         -- SPIKE_ACCUMULATED Register
         live_spike_accumulated_i : in std_logic_vector(31 downto 0);
+        -- STATUS Register
+        live_status_i : in std_logic_vector(31 downto 0);
 
         -- Slave AXI4-Lite Interface
         s_axi_aclk : in std_logic;
@@ -85,6 +87,7 @@ architecture rtl of filter_reg_bank is
     -- CONTROL Register
     signal cfg_control_enable_q : std_logic_vector(0 downto 0);
     signal cfg_control_global_reset_q : std_logic_vector(0 downto 0);
+    signal global_reset_cmd : std_logic;
     signal cfg_control_clear_q : std_logic_vector(0 downto 0);
 
     -- CONFIG Register
@@ -97,8 +100,8 @@ architecture rtl of filter_reg_bank is
     -- SPIKE_ACCUMULATION_LIMIT Register
     signal param_spike_accumulation_limit_q : std_logic_vector(31 downto 0);
 
-    -- EXCITATION_FACTOR Register
-    signal param_excitation_factor_q : std_logic_vector(31 downto 0);
+    -- POTENTIAL_THRESHOLD Register
+    signal param_potential_threshold_q : std_logic_vector(31 downto 0);
 begin
 
     -- AXI4-Lite output signals assignements
@@ -113,13 +116,13 @@ begin
 
     -- Registers output signals assignements
     cfg_control_enable_o <= cfg_control_enable_q;
-    cfg_control_global_reset_o <= cfg_control_global_reset_q;
+    cfg_control_global_reset_o(0) <= not global_reset_cmd;
     cfg_control_clear_o <= cfg_control_clear_q;
     cfg_config_test_pattern_o <= cfg_config_test_pattern_q;
     cfg_config_timeout_enable_o <= cfg_config_timeout_enable_q;
     param_decay_counter_limit_o <= param_decay_counter_limit_q;
     param_spike_accumulation_limit_o <= param_spike_accumulation_limit_q;
-    param_excitation_factor_o <= param_excitation_factor_q;
+    param_potential_threshold_o <= param_potential_threshold_q;
 
     ---------------------------
     -- Write address channel --
@@ -207,19 +210,22 @@ begin
                 -- Clear registers (values by default)
                 cfg_control_enable_q <= CONTROL_ENABLE_DEFAULT;
                 cfg_control_global_reset_q <= CONTROL_GLOBAL_RESET_DEFAULT;
+                global_reset_cmd <= '0';
                 cfg_control_clear_q <= CONTROL_CLEAR_DEFAULT;
                 cfg_config_test_pattern_q <= CONFIG_TEST_PATTERN_DEFAULT;
                 cfg_config_timeout_enable_q <= CONFIG_TIMEOUT_ENABLE_DEFAULT;
                 param_decay_counter_limit_q <= DECAY_COUNTER_LIMIT_DEFAULT;
                 param_spike_accumulation_limit_q <= SPIKE_ACCUMULATION_LIMIT_DEFAULT;
-                param_excitation_factor_q <= EXCITATION_FACTOR_DEFAULT;
+                param_potential_threshold_q <= POTENTIAL_THRESHOLD_DEFAULT;
             else
+                global_reset_cmd <= '0';
                 -- Trigger Register (reset to default value every clock cycle)
                 if axi_awready = '1' then
                     case axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) is
                         when CONTROL_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             cfg_control_enable_q <= s_axi_wdata(CONTROL_ENABLE_MSB downto CONTROL_ENABLE_LSB);
-                            cfg_control_global_reset_q <= s_axi_wdata(CONTROL_GLOBAL_RESET_MSB downto CONTROL_GLOBAL_RESET_LSB);
+                            -- cfg_control_global_reset_q <= s_axi_wdata(CONTROL_GLOBAL_RESET_MSB downto CONTROL_GLOBAL_RESET_LSB);
+                            global_reset_cmd <= s_axi_wdata(CONTROL_GLOBAL_RESET_MSB);
                             cfg_control_clear_q <= s_axi_wdata(CONTROL_CLEAR_MSB downto CONTROL_CLEAR_LSB);
                         when CONFIG_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             cfg_config_test_pattern_q <= s_axi_wdata(CONFIG_TEST_PATTERN_MSB downto CONFIG_TEST_PATTERN_LSB);
@@ -228,8 +234,8 @@ begin
                             param_decay_counter_limit_q <= s_axi_wdata(DECAY_COUNTER_LIMIT_MSB downto DECAY_COUNTER_LIMIT_LSB);
                         when SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             param_spike_accumulation_limit_q <= s_axi_wdata(SPIKE_ACCUMULATION_LIMIT_MSB downto SPIKE_ACCUMULATION_LIMIT_LSB);
-                        when EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
-                            param_excitation_factor_q <= s_axi_wdata(EXCITATION_FACTOR_MSB downto EXCITATION_FACTOR_LSB);
+                        when POTENTIAL_THRESHOLD_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            param_potential_threshold_q <= s_axi_wdata(POTENTIAL_THRESHOLD_MSB downto POTENTIAL_THRESHOLD_LSB);
                         when others =>
                             -- Unknown address
                             cfg_control_enable_q <= cfg_control_enable_q;
@@ -239,7 +245,7 @@ begin
                             cfg_config_timeout_enable_q <= cfg_config_timeout_enable_q;
                             param_decay_counter_limit_q <= param_decay_counter_limit_q;
                             param_spike_accumulation_limit_q <= param_spike_accumulation_limit_q;
-                            param_excitation_factor_q <= param_excitation_factor_q;
+                            param_potential_threshold_q <= param_potential_threshold_q;
                     end case;
                 end if;
             end if;
@@ -251,7 +257,7 @@ begin
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = CONTROL_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = DECAY_COUNTER_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
-        '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
+        '1' when axi_awaddr(ADDR_MSB_C downto ADDR_LSB_C) = POTENTIAL_THRESHOLD_ADDR(ADDR_MSB_C downto ADDR_LSB_C) else
         '0';
 
     ----------------------------
@@ -371,10 +377,12 @@ begin
                             axi_rdata(DECAY_COUNTER_LIMIT_MSB downto DECAY_COUNTER_LIMIT_LSB) <= param_decay_counter_limit_q;
                         when SPIKE_ACCUMULATION_LIMIT_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             axi_rdata(SPIKE_ACCUMULATION_LIMIT_MSB downto SPIKE_ACCUMULATION_LIMIT_LSB) <= param_spike_accumulation_limit_q;
-                        when EXCITATION_FACTOR_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
-                            axi_rdata(EXCITATION_FACTOR_MSB downto EXCITATION_FACTOR_LSB) <= param_excitation_factor_q;
+                        when POTENTIAL_THRESHOLD_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            axi_rdata(POTENTIAL_THRESHOLD_MSB downto POTENTIAL_THRESHOLD_LSB) <= param_potential_threshold_q;
                         when SPIKE_ACCUMULATED_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
                             axi_rdata(SPIKE_ACCUMULATED_MSB downto SPIKE_ACCUMULATED_LSB) <= live_spike_accumulated_i;
+                        when STATUS_ADDR(ADDR_MSB_C downto ADDR_LSB_C) =>
+                            axi_rdata(STATUS_MSB downto STATUS_LSB) <= live_status_i(STATUS_MSB downto STATUS_LSB);
                         when others =>
                             -- unknown address
                             axi_rresp <= "10"; -- SLVERR
