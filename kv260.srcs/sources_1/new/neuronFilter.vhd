@@ -50,6 +50,7 @@ architecture rtl of neuronFilter is
   signal decay_counter_limit_s : std_logic_vector(31 downto 0);
   signal live_spike_accumulated_s : std_logic_vector(31 downto 0);
   signal live_status_s : std_logic_vector(31 downto 0);
+  signal reset_req_s : std_logic_vector(0 downto 0);
 
 begin
   cropper : entity xil_defaultlib.cropper
@@ -90,7 +91,7 @@ begin
     port map(
       -- Clock and Reset
       aclk => aclk,
-      reset_req_i => not aresetn,
+      reset_req_i => reset_req_s,
 
       -- Input Data Stream
       s_axis_tready => tready_cropper_matrix,
@@ -118,7 +119,7 @@ begin
     port map(
       -- CONTROL Register
       cfg_control_enable_o => open,
-      cfg_control_global_reset_o => open,
+      cfg_control_global_reset_o => reset_req_s,
       cfg_control_clear_o => open,
       -- CONFIG Register
       cfg_config_test_pattern_o => open,

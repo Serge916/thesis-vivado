@@ -137,12 +137,12 @@ begin
 
                             if hdr4 = x"8" then
                                 -- TIME HIGH: update & forward immediately (no extra spacing)
-                                time_high28 <= unsigned(s_axis_tdata(59 downto 32));
+                                time_high28 <= unsigned(in_data_sw(59 downto 32));
                                 wait_cnt <= (others => '0');
                                 st <= ST_SEND;
                             else
                                 -- NORMAL EVENT: compute spacing from timestamp
-                                low6 := unsigned(s_axis_tdata(59 downto 54));
+                                low6 := unsigned(in_data_sw(59 downto 54));
                                 ts := (resize(time_high28, 34) sll 6) or resize(low6, 34);
 
                                 if first_event = '1' then

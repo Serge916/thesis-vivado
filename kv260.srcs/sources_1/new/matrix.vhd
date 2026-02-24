@@ -19,7 +19,7 @@ entity matrix is
     port (
         -- Clock and Reset
         aclk : in std_logic;
-        reset_req_i : in std_logic;
+        reset_req_i : in std_logic_vector(0 downto 0);
 
         -- Input Data Stream
         s_axis_tready : out std_logic;
@@ -387,9 +387,11 @@ begin
                                     spike(i) := '0';
                                 end if;
 
-                                -- If it is all 0, initialize it to 1. Else, shift 1 position to the left.
+                                -- If it is all 0, initialize it to 1. If it spiked, reset. Else, shift 1 position to the left.
                                 if cell = INITIAL_WORD then
                                     cell := to_unsigned(1, MEMBRANE_POTENTIAL_SIZE);
+                                elsif spike(i) = '1' then
+                                    cell := INITIAL_WORD;
                                 else
                                     cell := cell sll 1;
                                 end if;
@@ -753,7 +755,7 @@ begin
             case state is
                 when INTEGRATE =>
                     live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_INTEGRATE;
-                    if reset_req_i = '1' then
+                    if reset_req_i(0) = '1' then
                         state <= RESET;
                     elsif decay_counter_hit = '1' then
                         state <= DECAY;
@@ -762,14 +764,14 @@ begin
                     end if;
                 when FLUSH =>
                     live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_FLUSH;
-                    if reset_req_i = '1' then
+                    if reset_req_i(0) = '1' then
                         state <= RESET;
                     elsif flush_ongoing = '0' and prev_state = FLUSH then
                         state <= RESET;
                     end if;
                 when DECAY =>
                     live_status_o(STATUS_MSB downto STATUS_LSB) <= STATUS_DECAY;
-                    if reset_req_i = '1' then
+                    if reset_req_i(0) = '1' then
                         state <= RESET;
                     elsif decay_ongoing = '0' and prev_state = DECAY then
                         state <= INTEGRATE;
