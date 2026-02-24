@@ -116,7 +116,7 @@ begin
 
     -- Registers output signals assignements
     cfg_control_enable_o <= cfg_control_enable_q;
-    cfg_control_global_reset_o(0) <= not global_reset_cmd;
+    cfg_control_global_reset_o(0) <= global_reset_cmd;
     cfg_control_clear_o <= cfg_control_clear_q;
     cfg_config_test_pattern_o <= cfg_config_test_pattern_q;
     cfg_config_timeout_enable_o <= cfg_config_timeout_enable_q;
@@ -210,7 +210,7 @@ begin
                 -- Clear registers (values by default)
                 cfg_control_enable_q <= CONTROL_ENABLE_DEFAULT;
                 cfg_control_global_reset_q <= CONTROL_GLOBAL_RESET_DEFAULT;
-                global_reset_cmd <= '0';
+                global_reset_cmd <= '1';
                 cfg_control_clear_q <= CONTROL_CLEAR_DEFAULT;
                 cfg_config_test_pattern_q <= CONFIG_TEST_PATTERN_DEFAULT;
                 cfg_config_timeout_enable_q <= CONFIG_TIMEOUT_ENABLE_DEFAULT;
