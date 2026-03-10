@@ -4,13 +4,14 @@ use ieee.numeric_std.all;
 
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
+use xil_defaultlib.weights_pkg.all;
 
 entity network_tb is
 end entity;
 
 architecture sim of network_tb is
 
-    constant AXIS_TDATA_WIDTH_G : positive := 64;
+    constant AXIS_TDATA_WIDTH_G : positive := 128;
     constant AXIS_TUSER_WIDTH_G : positive := 1;
 
     signal aclk : std_logic := '0';
@@ -23,7 +24,7 @@ architecture sim of network_tb is
     signal s_axis_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0) := (others => '0');
     signal s_axis_tlast : std_logic := '0';
 
-    signal d_output : std_logic_vector(7 downto 0);
+    signal d_output : std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
 
     constant CLK_PERIOD : time := 10 ns;
 
@@ -75,13 +76,13 @@ begin
         -- Drive some AXIS inputs, even though current DUT ignores them
         wait for 20 ns;
         s_axis_tvalid <= '1';
-        s_axis_tdata <= x"1122334455667788";
-        s_axis_tkeep <= x"FF";
+        s_axis_tdata <= x"11223344556677881122334455667788";
+        s_axis_tkeep <= (others => '1');
         s_axis_tuser <= "1";
         s_axis_tlast <= '0';
 
         wait for CLK_PERIOD;
-        s_axis_tdata <= x"99AABBCCDDEEFF00";
+        s_axis_tdata <= x"99AABBCCDDEEFF001122334455667788";
         s_axis_tlast <= '1';
 
         wait for CLK_PERIOD;
