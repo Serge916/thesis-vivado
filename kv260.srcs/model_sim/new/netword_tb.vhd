@@ -76,14 +76,32 @@ begin
         -- Drive some AXIS inputs, even though current DUT ignores them
         wait for 20 ns;
         s_axis_tvalid <= '1';
-        s_axis_tdata <= x"11223344556677881122334455667788";
-        s_axis_tkeep <= (others => '1');
+        s_axis_tdata <= (others => '0');
+        s_axis_tkeep <= (others => '0');
         s_axis_tuser <= "1";
         s_axis_tlast <= '0';
 
         wait for CLK_PERIOD;
-        s_axis_tdata <= x"99AABBCCDDEEFF001122334455667788";
-        s_axis_tlast <= '1';
+        s_axis_tdata <= (0 => '1', others => '0');
+        s_axis_tlast <= '0';
+        wait for CLK_PERIOD;
+        s_axis_tdata <= (others => '0');
+        s_axis_tvalid <= '0';
+        wait for CLK_PERIOD * 3;
+        s_axis_tdata <= (1 => '1', others => '0');
+        s_axis_tvalid <= '1';
+        wait for CLK_PERIOD;
+        s_axis_tdata <= (others => '0');
+        s_axis_tvalid <= '0';
+        wait for CLK_PERIOD * 3;
+        s_axis_tdata <= (2 => '1', others => '0');
+        s_axis_tvalid <= '1';
+        wait for CLK_PERIOD;
+        s_axis_tdata <= (others => '0');
+        s_axis_tvalid <= '0';
+        wait for CLK_PERIOD * 3;
+        s_axis_tdata <= (3 => '1', others => '0');
+        s_axis_tvalid <= '1';
 
         wait for CLK_PERIOD;
         s_axis_tvalid <= '0';

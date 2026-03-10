@@ -50,7 +50,6 @@ architecture rtl of SpikeVision is
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
     signal weight_valid : std_logic := '0';
-    signal weight_valid_addr : std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
 
     -- Signals for Line Fetch
     -- Index 0 is top, index 2 is bottom
@@ -58,6 +57,8 @@ architecture rtl of SpikeVision is
     signal line_buffer : line_buffer_t;
     signal advance_lines : integer range 0 to CONV1_KERNEL_SIZE := 0;
     signal line_load_rdy : std_logic := '0';
+    signal line_load_init : std_logic := '0';
+    signal line_load_active : std_logic := '0';
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -78,6 +79,7 @@ begin
     s_axis_tready <= axi_in_ready;
 
     fetch_lines : process (aclk)
+        variable remaining_lines : integer range 0 to CONV1_KERNEL_SIZE;
     begin
         if rising_edge(aclk) then
             -- By default, do not accept data in
@@ -85,21 +87,28 @@ begin
             -- Make the ready flag a pulse
             line_load_rdy <= '0';
 
-            if advance_lines > 0 then
-                -- AXI Stream in
-                -- If lines can be accepted, signal it
-                axi_in_ready <= '1';
-                if s_axis_tvalid = '1' then
-                    -- Move one line down the buffer.
-                    line_buffer(2) <= line_buffer(1);
-                    line_buffer(1) <= line_buffer(0);
-                    -- Insert the incoming line
-                    line_buffer(0) <= s_axis_tdata;
-                    -- Decrease counter
-                    advance_lines <= advance_lines - 1;
-                    -- If last iteration, signal that operation is complete
-                    if advance_lines = 1 then
+            if line_load_init = '1' then
+                remaining_lines := advance_lines;
+                line_load_active <= '1';
+            else
+                if line_load_active = '1' then
+                    if remaining_lines > 0 then
+                        -- AXI Stream in
+                        -- If lines can be accepted, signal it
+                        axi_in_ready <= '1';
+                        if s_axis_tvalid = '1' then
+                            -- Move one line down the buffer.
+                            line_buffer(2) <= line_buffer(1);
+                            line_buffer(1) <= line_buffer(0);
+                            -- Insert the incoming line
+                            line_buffer(0) <= s_axis_tdata;
+                            -- Decrease counter
+                            remaining_lines := remaining_lines - 1;
+                        end if;
+                    else
+                        -- If last iteration, signal that operation is complete
                         line_load_rdy <= '1';
+                        line_load_active <= '0';
                     end if;
                 end if;
             end if;
@@ -156,15 +165,20 @@ begin
         case state is
             when IDLE =>
                 next_state <= LOAD_WEIGHTS;
+                -- For now I put these here, they should not be
                 weight_load_init <= '1';
                 conv1_chan <= std_logic_vector(to_unsigned(0, conv1_chan'length));
                 weight_batch_idx <= 1;
+
+                advance_lines <= 3;
+                line_load_init <= '1';
                 -- next_state <= IDLE;
             when LOAD_WEIGHTS =>
                 weight_load_init <= '0';
+                line_load_init <= '0';
                 next_state <= LOAD_WEIGHTS;
                 if weight_load_rdy = '1' then
-                    next_state <= IDLE;
+                    next_state <= CALCULATE;
                 end if;
             when CALCULATE =>
                 next_state <= CALCULATE;
