@@ -11,6 +11,7 @@ package weights_pkg is
     constant CONV1_CHAN_WIDTH_C : positive := integer(ceil(log2(real(CONV1_CHAN_INPUT))));
     constant CONV1_KERNEL_SIZE : positive := 3;
     constant CONV1_PRECISION : positive := 8;
+    constant CONV1_ACCUM_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV1_PRECISION) * 9)))); -- Biggest value if all 9 kernel are max value and spiked
     constant CONV1_FRAME_WIDTH : positive := 128;
     constant CONV1_FRAME_HEIGHT : positive := 128;
 

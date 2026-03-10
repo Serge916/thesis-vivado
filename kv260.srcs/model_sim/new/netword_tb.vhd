@@ -24,7 +24,14 @@ architecture sim of network_tb is
     signal s_axis_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0) := (others => '0');
     signal s_axis_tlast : std_logic := '0';
 
-    signal d_output : std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    signal m_axis_tready : std_logic := '1';
+    signal m_axis_tvalid : std_logic;
+    signal m_axis_tdata : std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
+    signal m_axis_tkeep : std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
+    signal m_axis_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+    signal m_axis_tlast : std_logic;
+
+    signal d_output : std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0);
 
     constant CLK_PERIOD : time := 10 ns;
 
@@ -46,6 +53,12 @@ begin
             s_axis_tkeep => s_axis_tkeep,
             s_axis_tuser => s_axis_tuser,
             s_axis_tlast => s_axis_tlast,
+            m_axis_tready => m_axis_tready,
+            m_axis_tvalid => m_axis_tvalid,
+            m_axis_tdata => m_axis_tdata,
+            m_axis_tkeep => m_axis_tkeep,
+            m_axis_tuser => m_axis_tuser,
+            m_axis_tlast => m_axis_tlast,
             d_output => d_output
         );
 

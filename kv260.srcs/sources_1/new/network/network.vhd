@@ -25,8 +25,16 @@ entity SpikeVision is
         s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
         s_axis_tlast : in std_logic;
 
+        -- Output Data Stream
+        m_axis_tready : in std_logic;
+        m_axis_tvalid : out std_logic;
+        m_axis_tdata : out std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
+        m_axis_tkeep : out std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
+        m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+        m_axis_tlast : out std_logic;
+
         -- Debug Output
-        d_output : out std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0)
+        d_output : out std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0)
     );
 end entity SpikeVision;
 
@@ -60,11 +68,30 @@ architecture rtl of SpikeVision is
     signal line_load_init : std_logic := '0';
     signal line_load_active : std_logic := '0';
 
+    -- Signals for Convolution
+    signal convolution_init : std_logic := '0';
+    signal convolution_rdy : std_logic := '0';
+    signal convolution_active : std_logic := '0';
+
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
+    signal axi_out_valid : std_logic := '0';
 
     -- Varied debug signals
     signal debug_remaining_kernels : integer;
+
+    function convolution_func(lines : line_buffer_t; kernel : single_kernel_buffer_t; first_column : natural) return signed is
+        variable accumulated : signed(CONV1_ACCUM_WIDTH_C - 1 downto 0) := (others => '0');
+    begin
+        for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+            for c in 0 to CONV1_KERNEL_SIZE - 1 loop
+                if lines(r)(first_column + c) = '1' then
+                    accumulated := accumulated + signed(kernel(c + r * CONV1_KERNEL_SIZE));
+                end if;
+            end loop;
+        end loop;
+        return accumulated;
+    end function;
 
 begin
     conv1_mem : entity xil_defaultlib.Conv1_ROM
@@ -156,6 +183,22 @@ begin
 
     end process;
 
+    convolution : process (aclk, aresetn)
+    begin
+        if rising_edge(aclk) then
+            convolution_rdy <= '0';
+
+            if convolution_init = '1' then
+                convolution_active <= '1';
+            end if;
+            if convolution_active = '1' then
+                d_output <= std_logic_vector(convolution_func(line_buffer, kernel_buffer(0), 1));
+                convolution_rdy <= '1';
+                convolution_active <= '0';
+            end if;
+        end if;
+    end process;
+
     FSM : process (aclk, aresetn)
     begin
         if rising_edge(aclk) then
@@ -168,7 +211,7 @@ begin
                 -- For now I put these here, they should not be
                 weight_load_init <= '1';
                 conv1_chan <= std_logic_vector(to_unsigned(0, conv1_chan'length));
-                weight_batch_idx <= 1;
+                weight_batch_idx <= 0;
 
                 advance_lines <= 3;
                 line_load_init <= '1';
@@ -179,9 +222,14 @@ begin
                 next_state <= LOAD_WEIGHTS;
                 if weight_load_rdy = '1' then
                     next_state <= CALCULATE;
+                    convolution_init <= '1';
                 end if;
             when CALCULATE =>
                 next_state <= CALCULATE;
+                convolution_init <= '0';
+                if convolution_rdy = '1' then
+                    next_state <= IDLE;
+                end if;
         end case;
 
     end process;
