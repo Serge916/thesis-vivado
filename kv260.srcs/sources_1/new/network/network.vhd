@@ -10,7 +10,7 @@ entity SpikeVision is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
-        AXIS_TUSER_WIDTH_G : positive := 1;
+        AXIS_TUSER_WIDTH_G : positive := 5;
         CONCURRENT_KERNELS : positive := 16
     );
     port (
@@ -90,8 +90,6 @@ architecture rtl of SpikeVision is
     signal convolution_init : std_logic := '0';
     signal convolution_rdy : std_logic := '0';
     signal convolution_active : std_logic := '0';
-    type intermediate_line_t is array(0 to CONV1_FRAME_WIDTH - 1) of signed(CONV1_INTERMEDIATE_WIDTH_C downto 0);
-    signal intermediate_line : intermediate_line_t := (others => (others => '0'));
     type output_line_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_line_buffer_t;
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
@@ -100,6 +98,7 @@ architecture rtl of SpikeVision is
     signal axi_in_ready : std_logic := '0';
     signal axi_out_valid : std_logic := '0';
     signal axi_out_init : std_logic := '0';
+    signal axi_out_active : std_logic := '0';
     signal axi_out_rdy : std_logic := '0';
 
     -- Varied debug signals
@@ -264,6 +263,7 @@ begin
     end process;
 
     flush : process (aclk, aresetn)
+        variable channel_id : integer range 0 to CONV1_CHAN_OUTPUT - 1 := 0;
     begin
 
         if aresetn = '0' then
@@ -274,27 +274,31 @@ begin
         elsif rising_edge(aclk) then
             axi_out_rdy <= '0';
 
-            if axi_out_valid = '1' then
+            if axi_out_active = '1' then
                 -- currently holding a valid beat
                 if m_axis_tready = '1' then
-                    axi_out_rdy <= '1';
 
-                    if axi_out_init = '1' then
+                    if channel_id < CONCURRENT_KERNELS - 1 then
                         -- handshake old beat, immediately load next beat
-                        m_axis_tdata <= output_line_buffer(0); -- Placeholder, it should go position after position in the buffer
-                        m_axis_tuser <= (others => '0'); --This will eventually be the metadata of the line, i.e. channel and row
+                        channel_id := channel_id + 1;
+                        m_axis_tdata <= output_line_buffer(channel_id);
+                        m_axis_tuser <= std_logic_vector(to_unsigned(channel_id + batch_idx * CONCURRENT_KERNELS, m_axis_tuser'length));
                         axi_out_valid <= '1';
                     else
-                        -- handshake old beat, become idle
+                        -- finished burst
+                        axi_out_rdy <= '1';
                         axi_out_valid <= '0';
+                        axi_out_active <= '0';
                     end if;
                 end if;
 
             else
-                -- idle, can accept a new beat
+                -- idle, can accept a new burst
                 if axi_out_init = '1' then
-                    m_axis_tdata <= output_line_buffer(0); -- Placeholder, it should go position after position in the buffer
-                    m_axis_tuser <= (others => '0'); --This will eventually be the metadata of the line, i.e. channel and row
+                    axi_out_active <= '1';
+                    channel_id := 0 + batch_idx * CONCURRENT_KERNELS;
+                    m_axis_tdata <= output_line_buffer(0);
+                    m_axis_tuser <= std_logic_vector(to_unsigned(0 + batch_idx * CONCURRENT_KERNELS, m_axis_tuser'length)); -- I keep the 0 for readability
                     axi_out_valid <= '1';
                 end if;
             end if;
