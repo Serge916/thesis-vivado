@@ -67,63 +67,80 @@ begin
     --------------------------------------------------------------------
     clk_process : process
     begin
-        while now < 5 us loop
+        loop
             aclk <= '0';
             wait for CLK_PERIOD/2;
             aclk <= '1';
             wait for CLK_PERIOD/2;
         end loop;
-        wait;
     end process;
 
     --------------------------------------------------------------------
     -- Stimulus
     --------------------------------------------------------------------
     stim_proc : process
+        variable tx_val : unsigned(AXIS_TDATA_WIDTH_G - 1 downto 0);
+        constant NUM_WORDS_C : natural := 130;
     begin
+        -- Default inputs
+        s_axis_tvalid <= '0';
+        s_axis_tdata <= (others => '0');
+        s_axis_tkeep <= (others => '1'); -- all bytes valid
+        s_axis_tuser <= (others => '0');
+        s_axis_tlast <= '0';
+
         -- Reset
         aresetn <= '0';
         wait for 50 ns;
+        wait until rising_edge(aclk);
         aresetn <= '1';
+        wait until rising_edge(aclk);
 
-        -- Drive some AXIS inputs, even though current DUT ignores them
-        wait for 20 ns;
-        s_axis_tvalid <= '1';
-        s_axis_tdata <= (others => '0');
-        s_axis_tkeep <= (others => '0');
-        s_axis_tuser <= "1";
-        s_axis_tlast <= '0';
+        -- Send increasing AXI Stream values
+        tx_val := (others => '0');
 
-        wait for CLK_PERIOD;
-        s_axis_tdata <= (0 => '1', others => '0');
-        s_axis_tlast <= '0';
-        wait for CLK_PERIOD;
-        s_axis_tdata <= (others => '0');
-        s_axis_tvalid <= '0';
-        wait for CLK_PERIOD * 3;
-        s_axis_tdata <= (1 => '1', others => '0');
-        s_axis_tvalid <= '1';
-        wait for CLK_PERIOD;
-        s_axis_tdata <= (others => '0');
-        s_axis_tvalid <= '0';
-        wait for CLK_PERIOD * 3;
-        s_axis_tdata <= (2 => '1', others => '0');
-        s_axis_tvalid <= '1';
-        wait for CLK_PERIOD;
-        s_axis_tdata <= (others => '0');
-        s_axis_tvalid <= '0';
-        wait for CLK_PERIOD * 3;
-        s_axis_tdata <= (3 => '1', others => '0');
-        s_axis_tvalid <= '1';
+        for i in 0 to NUM_WORDS_C - 1 loop
+            s_axis_tvalid <= '1';
+            s_axis_tdata <= std_logic_vector(tx_val);
+            s_axis_tkeep <= (others => '1');
+            s_axis_tuser <= (others => '0');
 
-        wait for CLK_PERIOD;
+            if i = NUM_WORDS_C - 1 then
+                s_axis_tlast <= '1';
+            else
+                s_axis_tlast <= '0';
+            end if;
+
+            -- Wait until DUT is ready and transfer occurs
+            loop
+                wait until rising_edge(aclk);
+
+                if s_axis_tvalid = '1' then
+                    assert s_axis_tdata = std_logic_vector(tx_val)
+                    report "AXIS source changed tdata before handshake"
+                        severity error;
+                end if;
+
+                exit when s_axis_tready = '1';
+            end loop;
+
+            -- Handshake happened on this clock edge
+            assert s_axis_tready = '1'
+            report "Expected DUT to be ready for AXIS transfer"
+                severity error;
+
+            tx_val := tx_val + 1;
+        end loop;
+
+        -- Deassert stream after final transfer
+        wait until rising_edge(aclk);
         s_axis_tvalid <= '0';
         s_axis_tdata <= (others => '0');
         s_axis_tkeep <= (others => '0');
         s_axis_tuser <= (others => '0');
         s_axis_tlast <= '0';
 
-        -- Let the RAM reader run for a while
+        -- Let DUT run for a while
         wait for 3 us;
 
         assert false report "End of simulation" severity failure;

@@ -45,9 +45,23 @@ architecture rtl of SpikeVision is
     signal conv1_dout : std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
 
     -- Signals for FSM
-    type state_t is (LOAD_WEIGHTS, CALCULATE, IDLE);
+    type state_t is (
+        IDLE,
+        START_WINDOW,
+        WAIT_LOAD,
+        START_CONV,
+        WAIT_CONV,
+        NEXT_BATCH,
+        NEXT_POSITION,
+        DONE
+    );
     signal state : state_t := IDLE;
     signal next_state : state_t;
+    signal out_y : integer range 0 to CONV1_FRAME_HEIGHT - 1 := 0;
+    signal batch_idx : integer range 0 to (CONV1_CHAN_INPUT * CONV1_CHAN_OUTPUT)/CONCURRENT_KERNELS - 1 := 0;
+    signal first_window : std_logic := '1';
+    signal weight_rdy_seen : std_logic := '0';
+    signal line_rdy_seen : std_logic := '0';
 
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
@@ -72,6 +86,9 @@ architecture rtl of SpikeVision is
     signal convolution_init : std_logic := '0';
     signal convolution_rdy : std_logic := '0';
     signal convolution_active : std_logic := '0';
+    type intermediate_line_t is array(0 to CONV1_FRAME_WIDTH - 1) of signed(CONV1_INTERMEDIATE_WIDTH_C downto 0);
+    signal intermediate_line : intermediate_line_t := (others => (others => '0'));
+    signal output_line : std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -80,16 +97,35 @@ architecture rtl of SpikeVision is
     -- Varied debug signals
     signal debug_remaining_kernels : integer;
 
-    function convolution_func(lines : line_buffer_t; kernel : single_kernel_buffer_t; first_column : natural) return signed is
+    function convolution_func(lines : line_buffer_t; kernel : single_kernel_buffer_t; central_column : natural) return signed is
         variable accumulated : signed(CONV1_ACCUM_WIDTH_C - 1 downto 0) := (others => '0');
     begin
-        for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-            for c in 0 to CONV1_KERNEL_SIZE - 1 loop
-                if lines(r)(first_column + c) = '1' then
-                    accumulated := accumulated + signed(kernel(c + r * CONV1_KERNEL_SIZE));
-                end if;
-            end loop;
-        end loop;
+        case central_column is
+            when 0 =>
+                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+                    for c in 0 to (CONV1_KERNEL_SIZE/2) loop
+                        if lines(r)(central_column + c) = '1' then
+                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
+                        end if;
+                    end loop;
+                end loop;
+            when (CONV1_FRAME_WIDTH - 1) =>
+                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+                    for c in - (CONV1_KERNEL_SIZE/2) to 0 loop
+                        if lines(r)(central_column + c) = '1' then
+                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
+                        end if;
+                    end loop;
+                end loop;
+            when others =>
+                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+                    for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
+                        if lines(r)(central_column + c) = '1' then
+                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
+                        end if;
+                    end loop;
+                end loop;
+        end case;
         return accumulated;
     end function;
 
@@ -123,7 +159,7 @@ begin
                         -- AXI Stream in
                         -- If lines can be accepted, signal it
                         axi_in_ready <= '1';
-                        if s_axis_tvalid = '1' then
+                        if s_axis_tvalid = '1' and axi_in_ready = '1' then
                             -- Move one line down the buffer.
                             line_buffer(2) <= line_buffer(1);
                             line_buffer(1) <= line_buffer(0);
@@ -131,6 +167,9 @@ begin
                             line_buffer(0) <= s_axis_tdata;
                             -- Decrease counter
                             remaining_lines := remaining_lines - 1;
+                            if remaining_lines = 0 then
+                                axi_in_ready <= '0';
+                            end if;
                         end if;
                     else
                         -- If last iteration, signal that operation is complete
@@ -192,7 +231,9 @@ begin
                 convolution_active <= '1';
             end if;
             if convolution_active = '1' then
-                d_output <= std_logic_vector(convolution_func(line_buffer, kernel_buffer(0), 1));
+                for c in 0 to CONV1_FRAME_WIDTH - 1 loop
+                    intermediate_line(c) <= convolution_func(line_buffer, kernel_buffer(0), c) + intermediate_line(c);
+                end loop;
                 convolution_rdy <= '1';
                 convolution_active <= '0';
             end if;
@@ -201,36 +242,98 @@ begin
 
     FSM : process (aclk, aresetn)
     begin
-        if rising_edge(aclk) then
-            state <= next_state;
-        end if;
+        if aresetn = '0' then
+            state <= IDLE;
+            weight_load_init <= '0';
+            line_load_init <= '0';
+            convolution_init <= '0';
+            weight_batch_idx <= 0;
+            batch_idx <= 0;
+            out_y <= 0;
+            advance_lines <= 0;
+            conv1_chan <= (others => '0');
+            first_window <= '1';
 
-        case state is
-            when IDLE =>
-                next_state <= LOAD_WEIGHTS;
-                -- For now I put these here, they should not be
-                weight_load_init <= '1';
-                conv1_chan <= std_logic_vector(to_unsigned(0, conv1_chan'length));
-                weight_batch_idx <= 0;
+        elsif rising_edge(aclk) then
+            -- default: init signals are pulses
+            weight_load_init <= '0';
+            line_load_init <= '0';
+            convolution_init <= '0';
 
-                advance_lines <= 3;
-                line_load_init <= '1';
-                -- next_state <= IDLE;
-            when LOAD_WEIGHTS =>
-                weight_load_init <= '0';
-                line_load_init <= '0';
-                next_state <= LOAD_WEIGHTS;
-                if weight_load_rdy = '1' then
-                    next_state <= CALCULATE;
+            case state is
+                when IDLE =>
+                    out_y <= 0;
+                    batch_idx <= 0;
+                    weight_batch_idx <= 0;
+                    conv1_chan <= (others => '0');
+                    first_window <= '1';
+                    state <= START_WINDOW;
+
+                when START_WINDOW =>
+                    -- first output pixel needs 3 fresh lines
+                    if first_window = '1' then
+                        advance_lines <= CONV1_KERNEL_SIZE;
+                        line_load_init <= '1';
+                        line_rdy_seen <= '0';
+                        first_window <= '0';
+                    end if;
+
+                    weight_batch_idx <= batch_idx;
+                    weight_load_init <= '1';
+                    weight_rdy_seen <= '0';
+                    state <= WAIT_LOAD;
+
+                when WAIT_LOAD =>
+                    if weight_load_rdy = '1' then
+                        weight_rdy_seen <= '1';
+                    end if;
+
+                    if line_load_rdy = '1' then
+                        line_rdy_seen <= '1';
+                    end if;
+                    -- Either of the signals means load is ready
+                    if (weight_rdy_seen = '1' or weight_load_rdy = '1') and
+                        (line_rdy_seen = '1' or line_load_rdy = '1') then
+                        state <= START_CONV;
+                    end if;
+
+                when START_CONV =>
                     convolution_init <= '1';
-                end if;
-            when CALCULATE =>
-                next_state <= CALCULATE;
-                convolution_init <= '0';
-                if convolution_rdy = '1' then
-                    next_state <= IDLE;
-                end if;
-        end case;
+                    state <= WAIT_CONV;
 
+                when WAIT_CONV =>
+                    if convolution_rdy = '1' then
+                        state <= NEXT_BATCH;
+                    end if;
+
+                when NEXT_BATCH =>
+                    if batch_idx < (CONV1_CHAN_OUTPUT / CONCURRENT_KERNELS) - 1 then
+                        batch_idx <= batch_idx + 1;
+                        weight_batch_idx <= batch_idx + 1;
+                        weight_load_init <= '1';
+                        weight_rdy_seen <= '0';
+                        state <= WAIT_LOAD;
+                    else
+                        batch_idx <= 0;
+                        weight_batch_idx <= 0;
+                        state <= NEXT_POSITION;
+                    end if;
+
+                when NEXT_POSITION =>
+                    if out_y < CONV1_FRAME_HEIGHT - 1 then
+                        out_y <= out_y + 1;
+                        advance_lines <= 1;
+                        line_load_init <= '1';
+                        line_rdy_seen <= '0';
+                        state <= START_WINDOW;
+                    else
+                        state <= DONE;
+                    end if;
+
+                when DONE =>
+                    state <= DONE;
+            end case;
+        end if;
     end process;
+
 end rtl;
