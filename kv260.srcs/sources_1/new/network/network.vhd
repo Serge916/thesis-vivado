@@ -11,7 +11,8 @@ entity SpikeVision is
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
         AXIS_TUSER_WIDTH_G : positive := 5;
-        CONCURRENT_KERNELS : positive := 16
+        CONCURRENT_KERNELS : positive := 16;
+        COLUMS_PER_CYCLE : positive := 32
     );
     port (
         -- Clock and Reset
@@ -93,6 +94,7 @@ architecture rtl of SpikeVision is
     type output_line_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_line_buffer_t;
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
+    signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -146,6 +148,9 @@ begin
 
     s_axis_tready <= axi_in_ready;
     m_axis_tvalid <= axi_out_valid;
+    m_axis_tkeep <= (others => '1');
+    m_axis_tlast <= '0';
+    d_output <= (others => '0');
 
     fetch_lines : process (aclk)
         variable remaining_lines : integer range 0 to CONV1_KERNEL_SIZE;
@@ -240,24 +245,29 @@ begin
 
             if convolution_init = '1' then
                 convolution_active <= '1';
+                convolution_col_idx <= 0;
                 -- output_line_buffer <= (others => '0');
-            end if;
-            if convolution_active = '1' then
+
+            elsif convolution_active = '1' then
                 for k in 0 to CONCURRENT_KERNELS - 1 loop
-                    for c in 0 to CONV1_FRAME_WIDTH - 1 loop
+                    for c in 0 to COLUMS_PER_CYCLE - 1 loop
                         value := (others => '0');
                         for i in 0 to CONV1_CHAN_INPUT - 1 loop
-                            value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c) + value;
+                            value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c + convolution_col_idx) + value;
                         end loop;
 
-                        output_line_buffer(k)(c) <= '0';
+                        output_line_buffer(k)(c + convolution_col_idx) <= '0';
                         if value > 255 then
-                            output_line_buffer(k)(c) <= '1';
+                            output_line_buffer(k)(c + convolution_col_idx) <= '1';
                         end if;
                     end loop;
                 end loop;
-                convolution_rdy <= '1';
-                convolution_active <= '0';
+                if convolution_col_idx < CONV1_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                    convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
+                else
+                    convolution_rdy <= '1';
+                    convolution_active <= '0';
+                end if;
             end if;
         end if;
     end process;

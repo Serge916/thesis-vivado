@@ -131,8 +131,8 @@ begin
             report "Expected DUT to be ready for AXIS transfer"
                 severity error;
 
-            -- tx_val := tx_val + 1;
-            tx_val := (others => '1');
+            tx_val := tx_val + 1;
+            -- tx_val := (others => '1');
         end loop;
 
         -- Deassert stream after final transfer
