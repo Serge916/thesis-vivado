@@ -8,7 +8,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity SpikeVision is
     generic (
-        AXIS_TDATA_WIDTH_G : positive := 128;
+        S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
         AXIS_TUSER_WIDTH_G : positive := 1;
         CONCURRENT_KERNELS : positive := 16
     );
@@ -20,16 +21,16 @@ entity SpikeVision is
         -- Input Data Stream
         s_axis_tready : out std_logic;
         s_axis_tvalid : in std_logic;
-        s_axis_tdata : in std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
-        s_axis_tkeep : in std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
+        s_axis_tdata : in std_logic_vector(S_AXIS_TDATA_WIDTH_G - 1 downto 0);
+        s_axis_tkeep : in std_logic_vector((S_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
         s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
         s_axis_tlast : in std_logic;
 
         -- Output Data Stream
         m_axis_tready : in std_logic;
         m_axis_tvalid : out std_logic;
-        m_axis_tdata : out std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
-        m_axis_tkeep : out std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
+        m_axis_tdata : out std_logic_vector(M_AXIS_TDATA_WIDTH_G - 1 downto 0);
+        m_axis_tkeep : out std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
         m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
         m_axis_tlast : out std_logic;
 
@@ -41,8 +42,7 @@ end entity SpikeVision;
 architecture rtl of SpikeVision is
     signal conv1_en : std_logic;
     signal conv1_addr : std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
-    signal conv1_chan : std_logic_vector(CONV1_CHAN_WIDTH_C - 1 downto 0);
-    signal conv1_dout : std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    signal conv1_dout : std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
 
     -- Signals for FSM
     type state_t is (
@@ -59,7 +59,7 @@ architecture rtl of SpikeVision is
     signal state : state_t := IDLE;
     signal next_state : state_t;
     signal out_y : integer range 0 to CONV1_FRAME_HEIGHT - 1 := 0;
-    signal batch_idx : integer range 0 to (CONV1_CHAN_INPUT * CONV1_CHAN_OUTPUT)/CONCURRENT_KERNELS - 1 := 0;
+    signal batch_idx : integer range 0 to (CONV1_CHAN_OUTPUT)/CONCURRENT_KERNELS - 1 := 0;
     signal first_window : std_logic := '1';
     signal weight_rdy_seen : std_logic := '0';
     signal line_rdy_seen : std_logic := '0';
@@ -67,16 +67,19 @@ architecture rtl of SpikeVision is
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
     type single_kernel_buffer_t is array (0 to (CONV1_KERNEL_SIZE ** 2) - 1) of std_logic_vector(CONV1_PRECISION - 1 downto 0);
-    type kernel_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
+    type channel_kernel_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
+    type kernel_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_kernel_buffer_t;
     signal kernel_buffer : kernel_buffer_t;
-    signal weight_batch_idx : integer range 0 to (CONV1_CHAN_INPUT * CONV1_CHAN_OUTPUT)/CONCURRENT_KERNELS - 1 := 0;
+    signal weight_batch_idx : integer range 0 to CONV1_CHAN_OUTPUT/CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
     signal weight_valid : std_logic := '0';
 
     -- Signals for Line Fetch
     -- Index 0 is top, index 2 is bottom
-    type line_buffer_t is array (0 to CONV1_KERNEL_SIZE - 1) of std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
+    subtype single_line_buffer_t is std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
+    type channel_line_buffer_t is array (0 to CONV1_KERNEL_SIZE - 1) of single_line_buffer_t;
+    type line_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_line_buffer_t;
     signal line_buffer : line_buffer_t;
     signal advance_lines : integer range 0 to CONV1_KERNEL_SIZE := 0;
     signal line_load_rdy : std_logic := '0';
@@ -89,7 +92,9 @@ architecture rtl of SpikeVision is
     signal convolution_active : std_logic := '0';
     type intermediate_line_t is array(0 to CONV1_FRAME_WIDTH - 1) of signed(CONV1_INTERMEDIATE_WIDTH_C downto 0);
     signal intermediate_line : intermediate_line_t := (others => (others => '0'));
-    signal output_line : std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
+    type output_line_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_line_buffer_t;
+    signal output_line_buffer : output_line_buffer_t;
+    subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -98,10 +103,9 @@ architecture rtl of SpikeVision is
     signal axi_out_rdy : std_logic := '0';
 
     -- Varied debug signals
-    signal debug_remaining_kernels : integer;
 
-    function convolution_func(lines : line_buffer_t; kernel : single_kernel_buffer_t; central_column : natural) return signed is
-        variable accumulated : signed(CONV1_ACCUM_WIDTH_C - 1 downto 0) := (others => '0');
+    function convolution_func(lines : channel_line_buffer_t; kernel : single_kernel_buffer_t; central_column : natural) return accumulate_t is
+        variable accumulated : accumulate_t := (others => '0');
     begin
         case central_column is
             when 0 =>
@@ -138,11 +142,11 @@ begin
             clk => aclk,
             en => conv1_en,
             addr => conv1_addr,
-            channel => conv1_chan,
             dout => conv1_dout
         );
 
     s_axis_tready <= axi_in_ready;
+    m_axis_tvalid <= axi_out_valid;
 
     fetch_lines : process (aclk)
         variable remaining_lines : integer range 0 to CONV1_KERNEL_SIZE;
@@ -163,16 +167,19 @@ begin
                         -- If lines can be accepted, signal it
                         axi_in_ready <= '1';
                         if s_axis_tvalid = '1' and axi_in_ready = '1' then
-                            -- Move one line down the buffer.
-                            line_buffer(2) <= line_buffer(1);
-                            line_buffer(1) <= line_buffer(0);
-                            -- Insert the incoming line
-                            line_buffer(0) <= s_axis_tdata;
-                            -- Decrease counter
-                            remaining_lines := remaining_lines - 1;
-                            if remaining_lines = 0 then
+                            for chan in 0 to CONV1_CHAN_INPUT - 1 loop
+                                -- Move one line down the buffer.
+                                line_buffer(chan)(2) <= line_buffer(chan)(1);
+                                line_buffer(chan)(1) <= line_buffer(chan)(0);
+                                -- Insert the incoming line
+                                line_buffer(chan)(0) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
+                            end loop;
+
+                            if remaining_lines = 1 then
                                 axi_in_ready <= '0';
                             end if;
+                            -- Decrease counter
+                            remaining_lines := remaining_lines - 1;
                         end if;
                     else
                         -- If last iteration, signal that operation is complete
@@ -189,7 +196,6 @@ begin
         variable write_kernels : integer range 0 to CONCURRENT_KERNELS := 0;
 
     begin
-        debug_remaining_kernels <= read_kernels;
         -- I assume one word contains one kernel
         if rising_edge(aclk) then
             weight_load_rdy <= '0';
@@ -211,7 +217,9 @@ begin
             -- Split the word into the several weights
             if weight_valid = '1' then
                 for j in 0 to (CONV1_KERNEL_SIZE ** 2) - 1 loop
-                    kernel_buffer(write_kernels)(j) <= conv1_dout((j + 1) * CONV1_PRECISION - 1 downto (j) * CONV1_PRECISION);
+                    for i in 0 to CONV1_CHAN_INPUT - 1 loop
+                        kernel_buffer(i)(write_kernels)(j) <= conv1_dout(((j + 1) + (i * CONV1_KERNEL_SIZE ** 2)) * CONV1_PRECISION - 1 downto (j + (i * CONV1_KERNEL_SIZE ** 2)) * CONV1_PRECISION);
+                    end loop;
                 end loop;
                 if write_kernels = 0 then
                     conv1_en <= '0';
@@ -226,36 +234,37 @@ begin
     end process;
 
     convolution : process (aclk, aresetn)
+        variable value : accumulate_t := (others => '0');
     begin
         if rising_edge(aclk) then
             convolution_rdy <= '0';
 
             if convolution_init = '1' then
                 convolution_active <= '1';
-                intermediate_line <= (others => (others => '0'));
+                -- output_line_buffer <= (others => '0');
             end if;
             if convolution_active = '1' then
-                for c in 0 to CONV1_FRAME_WIDTH - 1 loop
-                    intermediate_line(c) <= convolution_func(line_buffer, kernel_buffer(0), c) + intermediate_line(c);
+                for k in 0 to CONCURRENT_KERNELS - 1 loop
+                    for c in 0 to CONV1_FRAME_WIDTH - 1 loop
+                        value := (others => '0');
+                        for i in 0 to CONV1_CHAN_INPUT - 1 loop
+                            value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c) + value;
+                        end loop;
+
+                        output_line_buffer(k)(c) <= '0';
+                        if value > 255 then
+                            output_line_buffer(k)(c) <= '1';
+                        end if;
+                    end loop;
                 end loop;
                 convolution_rdy <= '1';
                 convolution_active <= '0';
-            end if;
-            if convolution_rdy = '1' then
-                for c in 0 to CONV1_FRAME_WIDTH - 1 loop
-                    output_line(c) <= '0';
-
-                    if intermediate_line(c) > 255 then
-                        output_line(c) <= '1';
-                    end if;
-                end loop;
             end if;
         end if;
     end process;
 
     flush : process (aclk, aresetn)
     begin
-        m_axis_tvalid <= axi_out_valid;
 
         if aresetn = '0' then
             m_axis_tdata <= (others => '0');
@@ -272,8 +281,8 @@ begin
 
                     if axi_out_init = '1' then
                         -- handshake old beat, immediately load next beat
-                        m_axis_tdata <= output_line;
-                        m_axis_tuser <= '0'; --This will eventually be the metadata of the line, i.e. channel and row
+                        m_axis_tdata <= output_line_buffer(0); -- Placeholder, it should go position after position in the buffer
+                        m_axis_tuser <= (others => '0'); --This will eventually be the metadata of the line, i.e. channel and row
                         axi_out_valid <= '1';
                     else
                         -- handshake old beat, become idle
@@ -284,8 +293,8 @@ begin
             else
                 -- idle, can accept a new beat
                 if axi_out_init = '1' then
-                    m_axis_tdata <= output_line;
-                    m_axis_tuser <= '0'; --This will eventually be the metadata of the line, i.e. channel and row
+                    m_axis_tdata <= output_line_buffer(0); -- Placeholder, it should go position after position in the buffer
+                    m_axis_tuser <= (others => '0'); --This will eventually be the metadata of the line, i.e. channel and row
                     axi_out_valid <= '1';
                 end if;
             end if;
@@ -303,7 +312,6 @@ begin
             batch_idx <= 0;
             out_y <= 0;
             advance_lines <= 0;
-            conv1_chan <= (others => '0');
             first_window <= '1';
 
         elsif rising_edge(aclk) then
@@ -318,7 +326,6 @@ begin
                     out_y <= 0;
                     batch_idx <= 0;
                     weight_batch_idx <= 0;
-                    conv1_chan <= (others => '0');
                     first_window <= '1';
                     state <= START_WINDOW;
 

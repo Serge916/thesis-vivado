@@ -11,7 +11,8 @@ end entity;
 
 architecture sim of network_tb is
 
-    constant AXIS_TDATA_WIDTH_G : positive := 128;
+    constant S_AXIS_TDATA_WIDTH_G : positive := 256;
+    constant M_AXIS_TDATA_WIDTH_G : positive := 128;
     constant AXIS_TUSER_WIDTH_G : positive := 1;
 
     signal aclk : std_logic := '0';
@@ -19,15 +20,15 @@ architecture sim of network_tb is
 
     signal s_axis_tready : std_logic;
     signal s_axis_tvalid : std_logic := '0';
-    signal s_axis_tdata : std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0) := (others => '0');
-    signal s_axis_tkeep : std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0) := (others => '0');
+    signal s_axis_tdata : std_logic_vector(S_AXIS_TDATA_WIDTH_G - 1 downto 0) := (others => '0');
+    signal s_axis_tkeep : std_logic_vector((S_AXIS_TDATA_WIDTH_G/8) - 1 downto 0) := (others => '0');
     signal s_axis_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0) := (others => '0');
     signal s_axis_tlast : std_logic := '0';
 
     signal m_axis_tready : std_logic := '1';
     signal m_axis_tvalid : std_logic;
-    signal m_axis_tdata : std_logic_vector(AXIS_TDATA_WIDTH_G - 1 downto 0);
-    signal m_axis_tkeep : std_logic_vector((AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
+    signal m_axis_tdata : std_logic_vector(M_AXIS_TDATA_WIDTH_G - 1 downto 0);
+    signal m_axis_tkeep : std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
     signal m_axis_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
     signal m_axis_tlast : std_logic;
 
@@ -41,7 +42,8 @@ begin
     --------------------------------------------------------------------
     uut : entity xil_defaultlib.SpikeVision
         generic map(
-            AXIS_TDATA_WIDTH_G => AXIS_TDATA_WIDTH_G,
+            S_AXIS_TDATA_WIDTH_G => S_AXIS_TDATA_WIDTH_G,
+            M_AXIS_TDATA_WIDTH_G => M_AXIS_TDATA_WIDTH_G,
             AXIS_TUSER_WIDTH_G => AXIS_TUSER_WIDTH_G
         )
         port map(
@@ -79,7 +81,7 @@ begin
     -- Stimulus
     --------------------------------------------------------------------
     stim_proc : process
-        variable tx_val : unsigned(AXIS_TDATA_WIDTH_G - 1 downto 0);
+        variable tx_val : unsigned(S_AXIS_TDATA_WIDTH_G - 1 downto 0);
         constant NUM_WORDS_C : natural := 130;
     begin
         -- Default inputs

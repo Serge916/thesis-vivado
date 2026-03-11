@@ -14,9 +14,8 @@ entity Conv1_ROM is
         -- Input
         en : in std_logic;
         addr : in std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
-        channel : in std_logic_vector(CONV1_CHAN_WIDTH_C - 1 downto 0);
         -- Output
-        dout : out std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0)
+        dout : out std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0)
     );
 end entity Conv1_ROM;
 
@@ -27,7 +26,7 @@ architecture rtl of Conv1_ROM is
     attribute ram_style : string;
     attribute ram_style of rom : signal is "block";
 
-    signal dout_q : std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    signal dout_q : std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
 
 begin
 
@@ -36,7 +35,7 @@ begin
     read : process (clk)
     begin
         if rising_edge(clk) then
-            dout_q <= rom(to_integer(unsigned(channel)))(to_integer(unsigned(addr)));
+            dout_q <= rom(to_integer(unsigned(addr)));
         end if;
     end process;
 
