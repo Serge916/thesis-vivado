@@ -51,6 +51,7 @@ architecture rtl of SpikeVision is
         WAIT_LOAD,
         START_CONV,
         WAIT_CONV,
+        WAIT_FLUSH,
         NEXT_BATCH,
         NEXT_POSITION,
         DONE
@@ -93,6 +94,8 @@ architecture rtl of SpikeVision is
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
     signal axi_out_valid : std_logic := '0';
+    signal axi_out_init : std_logic := '0';
+    signal axi_out_rdy : std_logic := '0';
 
     -- Varied debug signals
     signal debug_remaining_kernels : integer;
@@ -229,6 +232,7 @@ begin
 
             if convolution_init = '1' then
                 convolution_active <= '1';
+                intermediate_line <= (others => (others => '0'));
             end if;
             if convolution_active = '1' then
                 for c in 0 to CONV1_FRAME_WIDTH - 1 loop
@@ -236,6 +240,54 @@ begin
                 end loop;
                 convolution_rdy <= '1';
                 convolution_active <= '0';
+            end if;
+            if convolution_rdy = '1' then
+                for c in 0 to CONV1_FRAME_WIDTH - 1 loop
+                    output_line(c) <= '0';
+
+                    if intermediate_line(c) > 255 then
+                        output_line(c) <= '1';
+                    end if;
+                end loop;
+            end if;
+        end if;
+    end process;
+
+    flush : process (aclk, aresetn)
+    begin
+        m_axis_tvalid <= axi_out_valid;
+
+        if aresetn = '0' then
+            m_axis_tdata <= (others => '0');
+            axi_out_valid <= '0';
+            axi_out_rdy <= '0';
+
+        elsif rising_edge(aclk) then
+            axi_out_rdy <= '0';
+
+            if axi_out_valid = '1' then
+                -- currently holding a valid beat
+                if m_axis_tready = '1' then
+                    axi_out_rdy <= '1';
+
+                    if axi_out_init = '1' then
+                        -- handshake old beat, immediately load next beat
+                        m_axis_tdata <= output_line;
+                        m_axis_tuser <= '0'; --This will eventually be the metadata of the line, i.e. channel and row
+                        axi_out_valid <= '1';
+                    else
+                        -- handshake old beat, become idle
+                        axi_out_valid <= '0';
+                    end if;
+                end if;
+
+            else
+                -- idle, can accept a new beat
+                if axi_out_init = '1' then
+                    m_axis_tdata <= output_line;
+                    m_axis_tuser <= '0'; --This will eventually be the metadata of the line, i.e. channel and row
+                    axi_out_valid <= '1';
+                end if;
             end if;
         end if;
     end process;
@@ -259,6 +311,7 @@ begin
             weight_load_init <= '0';
             line_load_init <= '0';
             convolution_init <= '0';
+            axi_out_init <= '0';
 
             case state is
                 when IDLE =>
@@ -303,6 +356,12 @@ begin
 
                 when WAIT_CONV =>
                     if convolution_rdy = '1' then
+                        axi_out_init <= '1';
+                        state <= WAIT_FLUSH;
+                    end if;
+
+                when WAIT_FLUSH =>
+                    if axi_out_rdy = '1' then
                         state <= NEXT_BATCH;
                     end if;
 
