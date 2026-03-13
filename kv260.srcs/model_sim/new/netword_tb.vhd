@@ -60,8 +60,7 @@ begin
             m_axis_tdata => m_axis_tdata,
             m_axis_tkeep => m_axis_tkeep,
             m_axis_tuser => m_axis_tuser,
-            m_axis_tlast => m_axis_tlast,
-            d_output => d_output
+            m_axis_tlast => m_axis_tlast
         );
 
     --------------------------------------------------------------------
