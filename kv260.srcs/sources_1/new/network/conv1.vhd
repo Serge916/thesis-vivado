@@ -349,7 +349,7 @@ begin
                 -- idle, can accept a new burst
                 if axi_out_init = '1' then
                     axi_out_active <= '1';
-                    channel_id := 0 + batch_idx * CONCURRENT_KERNELS;
+                    channel_id := 0;
                     m_axis_tdata <= output_line_buffer(0);
                     m_axis_tuser <= std_logic_vector(to_unsigned(0 + batch_idx * CONCURRENT_KERNELS, m_axis_tuser'length)); -- I keep the 0 for readability
                     axi_out_valid <= '1';
