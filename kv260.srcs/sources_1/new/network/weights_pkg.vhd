@@ -67,7 +67,12 @@ package weights_pkg is
     -- Maxpool 1
     --------------------------------------------------------------------------------
     constant MAXPOOL1_OUTPUT_WIDTH : positive := 64;
+    constant MAXPOOL1_OUTPUT_HEIGHT : positive := 64;
     constant MAXPOOL1_TDATA_WIDTH : positive := 128;
+    --------------------------------------------------------------------------------
+    -- Convolution 2
+    --------------------------------------------------------------------------------
+    constant CONV2_TDATA_WIDTH : positive := 64;
 end package;
 
 package body weights_pkg is

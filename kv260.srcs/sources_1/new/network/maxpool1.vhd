@@ -33,7 +33,7 @@ entity Maxpool1_Layer is
         m_axis_tlast : out std_logic;
 
         -- Debug Output
-        d_output : out std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0)
+        d_output : out std_logic_vector(11 downto 0)
     );
 end entity Maxpool1_Layer;
 
@@ -61,31 +61,42 @@ architecture rtl of Maxpool1_Layer is
     --------------------------------------------------------------------------------
     -- AXI Stream signals
     --------------------------------------------------------------------------------
-    signal axi_in_ready : std_logic;
-    signal axi_out_ready : std_logic;
+    signal axi_in_ready : std_logic := '0';
+    signal axi_out_valid : std_logic := '0';
+    constant FINISH_CONDITION : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := std_logic_vector(to_unsigned(MAXPOOL1_OUTPUT_HEIGHT - 1, ROW_ID_WIDTH_C) & to_unsigned(CONV1_CHAN_OUTPUT - 1, CHANNEL_ID_WIDTH_C));
 
     --------------------------------------------------------------------------------
     -- Calculation signals
     --------------------------------------------------------------------------------
     signal output_line : axis_word_t;
-    type channel_line_buffer_t is array (0 to 1) of std_logic_vector(MAXPOOL1_OUTPUT_WIDTH - 1 downto 0);
+    subtype channel_line_buffer_t is std_logic_vector(MAXPOOL1_TDATA_WIDTH - 1 downto 0);
     type line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of channel_line_buffer_t;
-    signal line_buffer : line_buffer_t := (others => (others => (others => '0')));
+    signal line_buffer : line_buffer_t := (others => (others => '0'));
 begin
-
+    m_axis_tvalid <= axi_out_valid;
+    s_axis_tready <= axi_in_ready;
     axi_in_ready <= not out_fifo_full;
 
-    axi_out_queue : process (aclk)
+    m_axis_tkeep <= (others => '1');
+    d_output <= (others => '0');
+
+    fifo_flags : process (out_count)
     begin
+
         out_fifo_full <= '0';
+        out_fifo_empty <= '0';
+
         if out_count = OUT_FIFO_DEPTH_C then
             out_fifo_full <= '1';
         end if;
 
-        out_fifo_empty <= '0';
         if out_count = 0 then
             out_fifo_empty <= '1';
         end if;
+    end process;
+
+    axi_out_queue : process (aclk)
+    begin
 
         if rising_edge(aclk) then
             -- Push item to queue
@@ -107,30 +118,63 @@ begin
                 end if;
             end if;
             -- Update count (although it could be done by tracking the pointers)
-            case (push_queue & pop_queue) is
-                when "10" =>
-                    if out_count < OUT_FIFO_DEPTH_G then
-                        out_count <= out_count + 1;
-                    end if;
+            if push_queue = '1' and pop_queue = '0' and out_fifo_full = '0' then
+                if out_count < OUT_FIFO_DEPTH_C then
+                    out_count <= out_count + 1;
+                end if;
+            end if;
+            if push_queue = '0' and pop_queue = '1' and out_fifo_empty = '0'then
+                out_count <= out_count - 1;
+            end if;
 
-                when "01" =>
-                    if out_count > 0 then
-                        out_count <= out_count - 1;
-                    end if;
-
-                when others =>
-                    null; -- "00" or "11": count unchanged
-            end case;
         end if;
     end process;
 
     lines_in : process (aclk)
+        variable row_id : std_logic_vector(ROW_ID_WIDTH_C - 1 downto 0) := (others => '0');
+        variable channel_id : natural range 0 to CONV1_CHAN_OUTPUT - 1 := 0;
     begin
+
         if rising_edge(aclk) then
+            push_queue <= '0';
             if axi_in_ready = '1' and s_axis_tvalid = '1' then
-                -- Place 
-                line_buffer(s_axis_tuser mod CONV1_CONCURRENT_KERNELS) <= (others => '0')
+                -- Decode metadata
+                row_id := s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C);
+                channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
+                if row_id(0) = '0' then
+                    -- Place in the buffers, first row
+                    line_buffer(channel_id mod CONV1_CONCURRENT_KERNELS) <= s_axis_tdata; -- First index depends on how big the batch is. Second index is 0 if even, 1 if uneven row
+                else
+                    -- Compute
+                    for c in 0 to MAXPOOL1_OUTPUT_WIDTH - 1 loop -- The 2 is for the stride
+                        output_line.tdata(c) <= line_buffer(channel_id mod CONV1_CONCURRENT_KERNELS)(2 * c) or s_axis_tdata(2 * c) or line_buffer(channel_id mod CONV1_CONCURRENT_KERNELS)(2 * c + 1) or s_axis_tdata(2 * c + 1);
+                    end loop;
+                    output_line.tuser <= ('0' & row_id(ROW_ID_WIDTH_C - 1 downto 1)) & std_logic_vector(to_unsigned(channel_id, CHANNEL_ID_WIDTH_C)); -- The row id should be divided by 2
+                    push_queue <= '1';
+                end if;
             end if;
         end if;
     end process;
+
+    lines_out : process (aclk)
+    begin
+        if rising_edge(aclk) then
+            axi_out_valid <= '0';
+            pop_queue <= '0';
+            m_axis_tlast <= '0';
+
+            if out_fifo_empty = '0' then
+                axi_out_valid <= '1';
+                m_axis_tdata <= out_fifo(out_rd_ptr).tdata;
+                m_axis_tuser <= out_fifo(out_rd_ptr).tuser;
+                if out_fifo(out_rd_ptr).tuser = FINISH_CONDITION then
+                    m_axis_tlast <= '1';
+                end if;
+                if m_axis_tready = '1' then
+                    pop_queue <= '1';
+                end if;
+            end if;
+        end if;
+    end process;
+
 end architecture rtl;

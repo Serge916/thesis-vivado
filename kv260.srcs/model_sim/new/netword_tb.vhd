@@ -12,7 +12,7 @@ end entity;
 architecture sim of network_tb is
 
     constant S_AXIS_TDATA_WIDTH_G : positive := 256;
-    constant M_AXIS_TDATA_WIDTH_G : positive := 128;
+    constant M_AXIS_TDATA_WIDTH_G : positive := 64;
 
     signal aclk : std_logic := '0';
     signal aresetn : std_logic := '0';
@@ -136,8 +136,9 @@ begin
         s_axis_tuser <= (others => '0');
         s_axis_tlast <= '0';
 
+        wait until m_axis_tlast /= '0' for 1ms;
         -- Let DUT run for a while
-        wait for 3 us;
+        wait for 3us;
 
         assert false report "End of simulation" severity failure;
     end process;
