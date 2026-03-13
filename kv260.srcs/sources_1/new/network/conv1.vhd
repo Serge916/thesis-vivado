@@ -190,7 +190,6 @@ begin
     s_axis_tready <= axi_in_ready;
     m_axis_tvalid <= axi_out_valid;
     m_axis_tkeep <= (others => '1');
-    m_axis_tlast <= '0';
     d_output <= (others => '0');
 
     fetch_lines : process (aclk)
@@ -324,6 +323,7 @@ begin
 
         elsif rising_edge(aclk) then
             axi_out_rdy <= '0';
+            m_axis_tlast <= '0';
 
             if axi_out_active = '1' then
                 -- currently holding a valid beat
@@ -335,6 +335,9 @@ begin
                         m_axis_tdata <= output_line_buffer(channel_id);
                         m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
                         axi_out_valid <= '1';
+                        if out_y = CONV1_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV1_CONCURRENT_KERNELS) = CONV1_KERNEL_SIZE - 1 then
+                            m_axis_tlast <= '1';
+                        end if;
                     else
                         -- finished burst
                         axi_out_rdy <= '1';
