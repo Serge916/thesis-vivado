@@ -53,8 +53,6 @@ entity Conv1_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
-        AXIS_TUSER_WIDTH_G : positive := 5;
-        CONCURRENT_KERNELS : positive := 16;
         COLUMS_PER_CYCLE : positive := 32
     );
     port (
@@ -67,7 +65,7 @@ entity Conv1_Layer is
         s_axis_tvalid : in std_logic;
         s_axis_tdata : in std_logic_vector(S_AXIS_TDATA_WIDTH_G - 1 downto 0);
         s_axis_tkeep : in std_logic_vector((S_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
-        s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+        s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
         s_axis_tlast : in std_logic;
 
         -- Output Data Stream
@@ -75,11 +73,11 @@ entity Conv1_Layer is
         m_axis_tvalid : out std_logic;
         m_axis_tdata : out std_logic_vector(M_AXIS_TDATA_WIDTH_G - 1 downto 0);
         m_axis_tkeep : out std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
-        m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+        m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
         m_axis_tlast : out std_logic;
 
         -- Debug Output
-        d_output : out std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0)
+        d_output : out std_logic_vector(11 downto 0)
     );
 end entity Conv1_Layer;
 
@@ -103,7 +101,7 @@ architecture rtl of Conv1_Layer is
     signal state : state_t := IDLE;
     signal next_state : state_t;
     signal out_y : integer range 0 to CONV1_FRAME_HEIGHT - 1 := 0;
-    signal batch_idx : integer range 0 to (CONV1_CHAN_OUTPUT)/CONCURRENT_KERNELS - 1 := 0;
+    signal batch_idx : integer range 0 to (CONV1_CHAN_OUTPUT)/CONV1_CONCURRENT_KERNELS - 1 := 0;
     signal first_window : std_logic := '1';
     signal weight_rdy_seen : std_logic := '0';
     signal line_rdy_seen : std_logic := '0';
@@ -111,10 +109,10 @@ architecture rtl of Conv1_Layer is
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
     type single_kernel_buffer_t is array (0 to (CONV1_KERNEL_SIZE ** 2) - 1) of std_logic_vector(CONV1_PRECISION - 1 downto 0);
-    type channel_kernel_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
+    type channel_kernel_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
     type kernel_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_kernel_buffer_t;
     signal kernel_buffer : kernel_buffer_t;
-    signal weight_batch_idx : integer range 0 to CONV1_CHAN_OUTPUT/CONCURRENT_KERNELS - 1 := 0;
+    signal weight_batch_idx : integer range 0 to CONV1_CHAN_OUTPUT/CONV1_CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
     signal weight_valid : std_logic := '0';
@@ -134,7 +132,7 @@ architecture rtl of Conv1_Layer is
     signal convolution_init : std_logic := '0';
     signal convolution_rdy : std_logic := '0';
     signal convolution_active : std_logic := '0';
-    type output_line_buffer_t is array (0 to CONCURRENT_KERNELS - 1) of single_line_buffer_t;
+    type output_line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of single_line_buffer_t;
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
     signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
@@ -239,8 +237,8 @@ begin
     end process;
 
     fetch_weights : process (aclk)
-        variable read_kernels : integer range 0 to CONCURRENT_KERNELS := 0;
-        variable write_kernels : integer range 0 to CONCURRENT_KERNELS := 0;
+        variable read_kernels : integer range 0 to CONV1_CONCURRENT_KERNELS := 0;
+        variable write_kernels : integer range 0 to CONV1_CONCURRENT_KERNELS := 0;
 
     begin
         -- I assume one word contains one kernel
@@ -249,14 +247,14 @@ begin
 
             -- Initial read
             if weight_load_init = '1' then
-                read_kernels := CONCURRENT_KERNELS - 1;
-                write_kernels := CONCURRENT_KERNELS - 1;
-                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONCURRENT_KERNELS + CONCURRENT_KERNELS - 1, conv1_addr'length));
+                read_kernels := CONV1_CONCURRENT_KERNELS - 1;
+                write_kernels := CONV1_CONCURRENT_KERNELS - 1;
+                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONV1_CONCURRENT_KERNELS + CONV1_CONCURRENT_KERNELS - 1, conv1_addr'length));
                 conv1_en <= '1';
                 -- Load next address
             elsif read_kernels > 0 and weight_load_init = '0' then
                 read_kernels := read_kernels - 1;
-                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONCURRENT_KERNELS + read_kernels, conv1_addr'length));
+                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONV1_CONCURRENT_KERNELS + read_kernels, conv1_addr'length));
                 conv1_en <= '1';
                 weight_valid <= '1';
             end if;
@@ -292,7 +290,7 @@ begin
                 -- output_line_buffer <= (others => '0');
 
             elsif convolution_active = '1' then
-                for k in 0 to CONCURRENT_KERNELS - 1 loop
+                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
                     for c in 0 to COLUMS_PER_CYCLE - 1 loop
                         value := (others => '0');
                         for i in 0 to CONV1_CHAN_INPUT - 1 loop
@@ -331,11 +329,11 @@ begin
                 -- currently holding a valid beat
                 if m_axis_tready = '1' then
 
-                    if channel_id < CONCURRENT_KERNELS - 1 then
+                    if channel_id < CONV1_CONCURRENT_KERNELS - 1 then
                         -- handshake old beat, immediately load next beat
                         channel_id := channel_id + 1;
                         m_axis_tdata <= output_line_buffer(channel_id);
-                        m_axis_tuser <= std_logic_vector(to_unsigned(channel_id + batch_idx * CONCURRENT_KERNELS, m_axis_tuser'length));
+                        m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
                         axi_out_valid <= '1';
                     else
                         -- finished burst
@@ -351,7 +349,7 @@ begin
                     axi_out_active <= '1';
                     channel_id := 0;
                     m_axis_tdata <= output_line_buffer(0);
-                    m_axis_tuser <= std_logic_vector(to_unsigned(0 + batch_idx * CONCURRENT_KERNELS, m_axis_tuser'length)); -- I keep the 0 for readability
+                    m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
                     axi_out_valid <= '1';
                 end if;
             end if;
@@ -430,7 +428,7 @@ begin
                     end if;
 
                 when NEXT_BATCH =>
-                    if batch_idx < (CONV1_CHAN_OUTPUT / CONCURRENT_KERNELS) - 1 then
+                    if batch_idx < (CONV1_CHAN_OUTPUT / CONV1_CONCURRENT_KERNELS) - 1 then
                         batch_idx <= batch_idx + 1;
                         weight_batch_idx <= batch_idx + 1;
                         weight_load_init <= '1';

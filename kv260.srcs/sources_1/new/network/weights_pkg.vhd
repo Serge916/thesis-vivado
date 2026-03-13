@@ -4,7 +4,16 @@ use ieee.math_real.all;
 
 package weights_pkg is
 
-    -- constant CONV1_SIZE : integer := 64;
+    --------------------------------------------------------------------------------
+    -- Shared accross layers
+    --------------------------------------------------------------------------------
+    constant CHANNEL_ID_WIDTH_C : positive := 8; -- Up to 256 channels
+    constant ROW_ID_WIDTH_C : positive := 7; -- Up to 128 channels
+    constant AXIS_TUSER_WIDTH_C : positive := CHANNEL_ID_WIDTH_C + ROW_ID_WIDTH_C; -- Encodes channel and row metadata
+
+    --------------------------------------------------------------------------------
+    -- Convolution 1 
+    --------------------------------------------------------------------------------
     constant CONV1_CHAN_INPUT : positive := 2;
     constant CONV1_CHAN_OUTPUT : positive := 32; -- Output 3rd dimension
     constant CONV1_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV1_CHAN_OUTPUT))));
@@ -15,6 +24,8 @@ package weights_pkg is
     constant CONV1_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV1_PRECISION) * 9 * CONV1_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV1_FRAME_WIDTH : positive := 128;
     constant CONV1_FRAME_HEIGHT : positive := 128;
+    constant CONV1_CONCURRENT_KERNELS : positive := 16;
+    constant CONV1_TDATA_WIDTH : positive := 256;
 
     type conv1_mem_t is array (0 to CONV1_CHAN_OUTPUT - 1) of std_logic_vector(CONV1_CHAN_INPUT * CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
     constant CONV1_WEIGHTS : conv1_mem_t := (
@@ -52,6 +63,11 @@ package weights_pkg is
         31 => x"1026F91234272820E5" & x"0C24EC142A181325F9"
     );
 
+    --------------------------------------------------------------------------------
+    -- Maxpool 1
+    --------------------------------------------------------------------------------
+    constant MAXPOOL1_OUTPUT_WIDTH : positive := 64;
+    constant MAXPOOL1_TDATA_WIDTH : positive := 128;
 end package;
 
 package body weights_pkg is

@@ -8,9 +8,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity SpikeVision is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 256;
-        M_AXIS_TDATA_WIDTH_G : positive := 128;
-        AXIS_TUSER_WIDTH_G : positive := 5
+        S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 128 -- 128 per line * 2 input channels
     );
     port (
         -- Clock and Reset
@@ -22,7 +21,7 @@ entity SpikeVision is
         s_axis_tvalid : in std_logic;
         s_axis_tdata : in std_logic_vector(S_AXIS_TDATA_WIDTH_G - 1 downto 0);
         s_axis_tkeep : in std_logic_vector((S_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
-        s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+        s_axis_tuser : in std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
         s_axis_tlast : in std_logic;
 
         -- Output Data Stream
@@ -30,7 +29,7 @@ entity SpikeVision is
         m_axis_tvalid : out std_logic;
         m_axis_tdata : out std_logic_vector(M_AXIS_TDATA_WIDTH_G - 1 downto 0);
         m_axis_tkeep : out std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
-        m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+        m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
         m_axis_tlast : out std_logic
     );
 end entity SpikeVision;
@@ -38,17 +37,17 @@ end entity SpikeVision;
 architecture rtl of SpikeVision is
     signal dma_conv1_tready : std_logic;
     signal dma_conv1_tvalid : std_logic;
-    signal dma_conv1_tdata : std_logic_vector(256 - 1 downto 0);
-    signal dma_conv1_tkeep : std_logic_vector(256/8 - 1 downto 0);
-    signal dma_conv1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+    signal dma_conv1_tdata : std_logic_vector(CONV1_TDATA_WIDTH - 1 downto 0);
+    signal dma_conv1_tkeep : std_logic_vector(CONV1_TDATA_WIDTH/8 - 1 downto 0);
+    signal dma_conv1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal dma_conv1_tlast : std_logic;
     signal conv1_maxpool1_tready : std_logic;
     signal conv1_maxpool1_tvalid : std_logic;
-    signal conv1_maxpool1_tdata : std_logic_vector(128 - 1 downto 0);
-    signal conv1_maxpool1_tkeep : std_logic_vector(128/8 - 1 downto 0);
-    signal conv1_maxpool1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
+    signal conv1_maxpool1_tdata : std_logic_vector(MAXPOOL1_TDATA_WIDTH - 1 downto 0);
+    signal conv1_maxpool1_tkeep : std_logic_vector(MAXPOOL1_TDATA_WIDTH/8 - 1 downto 0);
+    signal conv1_maxpool1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal conv1_maxpool1_tlast : std_logic;
-    signal conv1_debug : std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0);
+    signal conv1_debug : std_logic_vector(11 downto 0);
 begin
     s_axis_tready <= dma_conv1_tready;
     dma_conv1_tvalid <= s_axis_tvalid;
@@ -65,6 +64,11 @@ begin
     m_axis_tlast <= conv1_maxpool1_tlast;
 
     con1 : entity xil_defaultlib.Conv1_Layer
+        generic map(
+            S_AXIS_TDATA_WIDTH_G => CONV1_TDATA_WIDTH, -- 128 per line * 2 input channels
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH, -- 128 per line * 2 input channels
+            COLUMS_PER_CYCLE => 32
+        )
         port map(
             aclk => aclk,
             aresetn => aresetn,
