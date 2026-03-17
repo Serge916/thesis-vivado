@@ -57,7 +57,7 @@ architecture rtl of Maxpool1_Layer is
     signal out_fifo_full : std_logic := '0';
     signal out_fifo_empty : std_logic := '0';
     signal push_queue : std_logic := '0';
-    signal pop_queue : std_logic := '0';
+    -- signal pop_queue : std_logic := '0';
     --------------------------------------------------------------------------------
     -- AXI Stream signals
     --------------------------------------------------------------------------------
@@ -80,6 +80,17 @@ begin
     m_axis_tkeep <= (others => '1');
     d_output <= (others => '0');
 
+    axi_master : process (out_rd_ptr, out_count, out_fifo_empty, out_fifo)
+    begin
+        axi_out_valid <= not out_fifo_empty;
+        m_axis_tdata <= out_fifo(out_rd_ptr).tdata;
+        m_axis_tuser <= out_fifo(out_rd_ptr).tuser;
+        m_axis_tlast <= '0';
+        if out_fifo(out_rd_ptr).tuser = FINISH_CONDITION and out_fifo_empty = '0' then
+            m_axis_tlast <= '1';
+        end if;
+    end process;
+
     fifo_flags : process (out_count)
     begin
 
@@ -96,9 +107,15 @@ begin
     end process;
 
     axi_out_queue : process (aclk)
+        variable pop_queue : std_logic := '0';
     begin
 
         if rising_edge(aclk) then
+            pop_queue := '0';
+            if (out_count > 0) and (m_axis_tready = '1') and (axi_out_valid) = '1' and out_fifo_empty = '0' then
+                pop_queue := '1';
+            end if;
+
             -- Push item to queue
             if push_queue = '1' and out_fifo_full = '0' then
                 out_fifo(out_wr_ptr) <= output_line;
@@ -155,26 +172,4 @@ begin
             end if;
         end if;
     end process;
-
-    lines_out : process (aclk)
-    begin
-        if rising_edge(aclk) then
-            axi_out_valid <= '0';
-            pop_queue <= '0';
-            m_axis_tlast <= '0';
-
-            if out_fifo_empty = '0' then
-                axi_out_valid <= '1';
-                m_axis_tdata <= out_fifo(out_rd_ptr).tdata;
-                m_axis_tuser <= out_fifo(out_rd_ptr).tuser;
-                if out_fifo(out_rd_ptr).tuser = FINISH_CONDITION then
-                    m_axis_tlast <= '1';
-                end if;
-                if m_axis_tready = '1' then
-                    pop_queue <= '1';
-                end if;
-            end if;
-        end if;
-    end process;
-
 end architecture rtl;

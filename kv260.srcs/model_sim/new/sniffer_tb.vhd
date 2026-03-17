@@ -88,7 +88,8 @@ architecture sim of sniffer_tb is
         -- write(l, string'(" tkeep=0x"));
         -- hwrite(l, tkeep_s);
         -- write(l, string'(" tuser=0x"));
-        -- hwrite(l, tuser_s);
+        write(l, string'(",0x"));
+        hwrite(l, tuser_s);
         -- write(l, string'(" tlast="));
         -- write(l, std_logic'image(tlast_s));
         writeline(log_f, l);
