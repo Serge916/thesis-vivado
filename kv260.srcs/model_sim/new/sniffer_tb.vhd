@@ -16,7 +16,7 @@ architecture sim of sniffer_tb is
     constant S_AXIS_TDATA_WIDTH_G : positive := 256;
     constant M_AXIS_TDATA_WIDTH_G : positive := 64;
     constant CLK_PERIOD : time := 10 ns;
-    constant NUM_WORDS_C : natural := 130; -- 128 rows + 2 padding
+    constant NUM_WORDS_C : natural := 128;
 
     signal aclk : std_logic := '0';
     signal aresetn : std_logic := '0';
@@ -287,21 +287,25 @@ begin
         wait until rising_edge(aclk);
         aresetn <= '1';
         wait until rising_edge(aclk);
+        -- This is to include padding
+        for i in -1 to NUM_WORDS_C loop
+            if (i =- 1) or (i = NUM_WORDS_C) then
+                tx_val := (others => '0');
+            else
+                assert not endfile(f_input_frame)
+                report "Input file has fewer lines than NUM_WORDS_C"
+                    severity failure;
 
-        for i in 0 to NUM_WORDS_C - 1 loop
-            assert not endfile(f_input_frame)
-            report "Input file has fewer lines than NUM_WORDS_C"
-                severity failure;
-
-            readline(f_input_frame, line_v);
-            read(line_v, tx_val);
+                readline(f_input_frame, line_v);
+                read(line_v, tx_val);
+            end if;
 
             s_axis_tvalid <= '1';
             s_axis_tdata <= tx_val;
             s_axis_tkeep <= (others => '1');
             s_axis_tuser <= (others => '0');
-
-            if i = NUM_WORDS_C - 1 then
+            -- This also takes into account the padding
+            if i = NUM_WORDS_C then
                 s_axis_tlast <= '1';
             else
                 s_axis_tlast <= '0';
