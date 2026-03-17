@@ -150,3 +150,7 @@ kv260.srcs/*/bd/*/sim/
 # My own simulation files
 *.evt
 *.binframe
+
+# Weigths, inputs and outputs
+kv260.srcs/sources_1/weights
+kv260.srcs/model_sim/new/split_frames
