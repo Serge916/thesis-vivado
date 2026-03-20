@@ -104,12 +104,12 @@ architecture rtl of Conv2_Layer is
         DONE
     );
     signal state : state_t := IDLE;
-    signal next_state : state_t;
     signal out_y : integer range 0 to CONV2_FRAME_HEIGHT - 1 := 0;
     signal batch_idx : integer range 0 to (CONV2_CHAN_OUTPUT)/CONV2_CONCURRENT_KERNELS - 1 := 0;
     signal first_window : std_logic := '1';
     signal weight_rdy_seen : std_logic := '0';
     signal line_rdy_seen : std_logic := '0';
+    signal pad_bottom : std_logic := '0';
 
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
@@ -213,19 +213,30 @@ begin
             else
                 if line_load_active = '1' then
                     if remaining_lines > 0 then
-                        -- AXI Stream in
-                        -- If lines can be accepted, signal it
-                        axi_in_ready <= '1';
-                        if s_axis_tvalid = '1' and axi_in_ready = '1' then
-                            channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
-                            -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
-                            -- Move one line down the buffer.
-                            line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
-                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
-                            -- Insert the incoming line
-                            line_buffer(channel_id)(0) <= s_axis_tdata;
-                            if remaining_lines = 1 then
-                                axi_in_ready <= '0';
+                        -- Insert last row padding
+                        if pad_bottom = '1' then
+                            for chan in 0 to (CONV2_CHAN_INPUT - 1) loop
+                                line_buffer(chan)(2) <= line_buffer(chan)(1);
+                                line_buffer(chan)(1) <= line_buffer(chan)(0);
+                                -- Insert an empty line
+                                line_buffer(chan)(0) <= (others => '0');
+                            end loop;
+                            remaining_lines := 0;
+                        else
+                            -- AXI Stream in
+                            -- If lines can be accepted, signal it
+                            axi_in_ready <= '1';
+                            if s_axis_tvalid = '1' and axi_in_ready = '1' then
+                                channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
+                                -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
+                                -- Move one line down the buffer.
+                                line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
+                                line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
+                                -- Insert the incoming line
+                                line_buffer(channel_id)(0) <= s_axis_tdata;
+                                if remaining_lines = 1 then
+                                    axi_in_ready <= '0';
+                                end if;
                             end if;
                             remaining_lines := remaining_lines - 1;
                         end if;
@@ -393,9 +404,9 @@ begin
                     state <= START_WINDOW;
 
                 when START_WINDOW =>
-                    -- first output pixel needs 3 fresh lines
+                    -- first output pixel needs 2 fresh lines
                     if first_window = '1' then
-                        advance_lines <= CONV2_KERNEL_SIZE;
+                        advance_lines <= CONV2_KERNEL_SIZE - 1;
                         line_load_init <= '1';
                         line_rdy_seen <= '0';
                         first_window <= '0';
@@ -452,6 +463,13 @@ begin
                     if out_y < CONV2_FRAME_HEIGHT - 1 then
                         out_y <= out_y + 1;
                         advance_lines <= 1;
+
+                        if out_y = CONV2_FRAME_HEIGHT - 2 then
+                            pad_bottom <= '1'; -- next window inserts zero row
+                        else
+                            pad_bottom <= '0';
+                        end if;
+
                         line_load_init <= '1';
                         line_rdy_seen <= '0';
                         state <= START_WINDOW;
