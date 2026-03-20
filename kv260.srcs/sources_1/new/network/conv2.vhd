@@ -199,7 +199,7 @@ begin
     ingress_lines : process (aclk)
         variable remaining_lines : natural range 0 to CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT := 0;
         variable channel_id : natural range 0 to CONV2_CHAN_INPUT - 1 := 0;
-        variable row_id : natural range 0 to CONV2_FRAME_HEIGHT - 1 := 0;
+        -- variable row_id : natural range 0 to CONV2_FRAME_HEIGHT - 1 := 0;
         variable bubble : natural range 0 to CONV2_KERNEL_SIZE - 1;
     begin
         if rising_edge(aclk) then
@@ -218,9 +218,12 @@ begin
                         axi_in_ready <= '1';
                         if s_axis_tvalid = '1' and axi_in_ready = '1' then
                             channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
-                            row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
-
-                            line_buffer(channel_id)(row_id mod CONV2_KERNEL_SIZE) <= s_axis_tdata;
+                            -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
+                            -- Move one line down the buffer.
+                            line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
+                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
+                            -- Insert the incoming line
+                            line_buffer(channel_id)(0) <= s_axis_tdata;
                             if remaining_lines = 1 then
                                 axi_in_ready <= '0';
                             end if;
