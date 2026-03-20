@@ -1,3 +1,6 @@
+--------------------------------------------------------------------------------
+-- WEIGHT MEMORY
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -5,30 +8,35 @@ use ieee.numeric_std.all;
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
 use xil_defaultlib.weights_pkg.all;
+use xil_defaultlib.weights_value_pkg.all;
 
-entity Conv1_ROM is
+entity Conv4_ROM is
     port (
         -- Clock and Reset
         clk : in std_logic;
 
         -- Input
         en : in std_logic;
-        addr : in std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
+        addr : in std_logic_vector(CONV4_ADDR_WIDTH_C - 1 downto 0);
         -- Output
-        dout : out std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0)
+        dout : out std_logic_vector(CONV4_KERNEL_SIZE ** 2 * CONV4_PRECISION - 1 downto 0)
     );
-end entity Conv1_ROM;
+end entity Conv4_ROM;
 
-architecture rtl of Conv1_ROM is
+architecture rtl of Conv4_ROM is
 
-    signal rom : conv1_mem_t := CONV1_WEIGHTS;
-    -- constant WEIGHT_INIT : std_logic_vector(16 * 9 - 1 downto 0) := (x"7F7F7F7F7F7F7F7F7F" & x"7F7F7F7F7F7F7F7F7F");
-    -- signal rom : conv1_mem_t := (others => WEIGHT_INIT);
+    signal rom : conv4_mem_t := to_conv4_mem(CONV4_WEIGHTS);
+
+    -- constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F");
+    -- signal rom : conv4_mem_t := (others => (WEIGHT_INIT));
 
     attribute ram_style : string;
     attribute ram_style of rom : signal is "block";
 
-    signal dout_q : std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    signal dout_q : std_logic_vector(CONV4_KERNEL_SIZE ** 2 * CONV4_PRECISION - 1 downto 0);
 
 begin
 
@@ -42,7 +50,9 @@ begin
     end process;
 
 end rtl;
-
+--------------------------------------------------------------------------------
+-- CONV4 LAYER
+--------------------------------------------------------------------------------
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -50,12 +60,13 @@ use ieee.numeric_std.all;
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
 use xil_defaultlib.weights_pkg.all;
+use xil_defaultlib.weights_value_pkg.all;
 
-entity Conv1_Layer is
+entity Conv4_Layer is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
-        COLUMS_PER_CYCLE : positive := 32
+        S_AXIS_TDATA_WIDTH_G : positive := 16;
+        M_AXIS_TDATA_WIDTH_G : positive := 16;
+        COLUMS_PER_CYCLE : positive := 16
     );
     port (
         -- Clock and Reset
@@ -81,12 +92,12 @@ entity Conv1_Layer is
         -- Debug Output
         d_output : out std_logic_vector(11 downto 0)
     );
-end entity Conv1_Layer;
+end entity Conv4_Layer;
 
-architecture rtl of Conv1_Layer is
-    signal conv1_en : std_logic;
-    signal conv1_addr : std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
-    signal conv1_dout : std_logic_vector(CONV1_PRECISION * CONV1_CHAN_INPUT * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+architecture rtl of Conv4_Layer is
+    signal conv4_en : std_logic;
+    signal conv4_addr : std_logic_vector(CONV4_ADDR_WIDTH_C - 1 downto 0);
+    signal conv4_dout : std_logic_vector(CONV4_KERNEL_SIZE ** 2 * CONV4_PRECISION - 1 downto 0);
 
     -- Signals for FSM
     type state_t is (
@@ -98,33 +109,39 @@ architecture rtl of Conv1_Layer is
         WAIT_FLUSH,
         NEXT_BATCH,
         NEXT_POSITION,
+        CLEAN_UP,
         DONE
     );
     signal state : state_t := IDLE;
-    signal out_y : integer range 0 to CONV1_FRAME_HEIGHT - 1 := 0;
-    signal batch_idx : integer range 0 to (CONV1_CHAN_OUTPUT)/CONV1_CONCURRENT_KERNELS - 1 := 0;
+    signal out_y : integer range 0 to CONV4_FRAME_HEIGHT - 1 := 0;
+    signal batch_idx : integer range 0 to (CONV4_CHAN_OUTPUT)/CONV4_CONCURRENT_KERNELS - 1 := 0;
     signal first_window : std_logic := '1';
     signal weight_rdy_seen : std_logic := '0';
     signal line_rdy_seen : std_logic := '0';
+    signal pad_bottom : std_logic := '0';
+    signal clean_up_init : std_logic := '0';
+    signal clean_up_rdy : std_logic := '0';
+    signal clean_up_active : std_logic := '0';
+    constant FINISH_CONDITION : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := std_logic_vector(to_unsigned(CONV4_FRAME_HEIGHT - 1, ROW_ID_WIDTH_C) & to_unsigned(CONV4_CHAN_OUTPUT - 1, CHANNEL_ID_WIDTH_C));
 
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
-    type single_kernel_buffer_t is array (0 to (CONV1_KERNEL_SIZE ** 2) - 1) of std_logic_vector(CONV1_PRECISION - 1 downto 0);
-    type channel_kernel_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
-    type kernel_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_kernel_buffer_t;
+    type single_kernel_buffer_t is array (0 to (CONV4_KERNEL_SIZE ** 2) - 1) of std_logic_vector(CONV4_PRECISION - 1 downto 0);
+    type channel_kernel_buffer_t is array (0 to CONV4_CONCURRENT_KERNELS - 1) of single_kernel_buffer_t;
+    type kernel_buffer_t is array (0 to CONV4_CHAN_INPUT - 1) of channel_kernel_buffer_t;
     signal kernel_buffer : kernel_buffer_t;
-    signal weight_batch_idx : integer range 0 to CONV1_CHAN_OUTPUT/CONV1_CONCURRENT_KERNELS - 1 := 0;
+    signal weight_batch_idx : integer range 0 to CONV4_CHAN_OUTPUT/CONV4_CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
     signal weight_valid : std_logic := '0';
 
     -- Signals for Line Fetch
     -- Index 0 is top, index 2 is bottom
-    subtype single_line_buffer_t is std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
-    type channel_line_buffer_t is array (0 to CONV1_KERNEL_SIZE - 1) of single_line_buffer_t;
-    type line_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_line_buffer_t;
-    signal line_buffer : line_buffer_t;
-    signal advance_lines : integer range 0 to CONV1_KERNEL_SIZE := 0;
+    subtype single_line_buffer_t is std_logic_vector(CONV4_FRAME_WIDTH - 1 downto 0);
+    type channel_line_buffer_t is array (0 to CONV4_KERNEL_SIZE - 1) of single_line_buffer_t;
+    type line_buffer_t is array (0 to CONV4_CHAN_INPUT - 1) of channel_line_buffer_t;
+    signal line_buffer : line_buffer_t := (others => (others => (others => '0')));
+    signal advance_lines : integer range 0 to CONV4_KERNEL_SIZE := 0;
     signal line_load_rdy : std_logic := '0';
     signal line_load_init : std_logic := '0';
     signal line_load_active : std_logic := '0';
@@ -133,10 +150,10 @@ architecture rtl of Conv1_Layer is
     signal convolution_init : std_logic := '0';
     signal convolution_rdy : std_logic := '0';
     signal convolution_active : std_logic := '0';
-    type output_line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of single_line_buffer_t;
+    type output_line_buffer_t is array (0 to CONV4_CONCURRENT_KERNELS - 1) of single_line_buffer_t;
     signal output_line_buffer : output_line_buffer_t;
-    subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
-    signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
+    subtype accumulate_t is signed(CONV4_ACCUM_WIDTH_C - 1 downto 0);
+    signal convolution_col_idx : integer range 0 to CONV4_FRAME_WIDTH - 1;
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -152,26 +169,26 @@ architecture rtl of Conv1_Layer is
     begin
         case central_column is
             when 0 =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in 0 to (CONV1_KERNEL_SIZE/2) loop
+                for r in 0 to CONV4_KERNEL_SIZE - 1 loop
+                    for c in 0 to (CONV4_KERNEL_SIZE/2) loop
                         if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
+                            accumulated := accumulated + signed(kernel((c + (CONV4_KERNEL_SIZE/2)) + r * CONV4_KERNEL_SIZE));
                         end if;
                     end loop;
                 end loop;
-            when (CONV1_FRAME_WIDTH - 1) =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in - (CONV1_KERNEL_SIZE/2) to 0 loop
+            when (CONV4_FRAME_WIDTH - 1) =>
+                for r in 0 to CONV4_KERNEL_SIZE - 1 loop
+                    for c in - (CONV4_KERNEL_SIZE/2) to 0 loop
                         if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
+                            accumulated := accumulated + signed(kernel((c + (CONV4_KERNEL_SIZE/2)) + r * CONV4_KERNEL_SIZE));
                         end if;
                     end loop;
                 end loop;
             when others =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
+                for r in 0 to CONV4_KERNEL_SIZE - 1 loop
+                    for c in - (CONV4_KERNEL_SIZE/2) to (CONV4_KERNEL_SIZE/2) loop
                         if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
+                            accumulated := accumulated + signed(kernel((c + (CONV4_KERNEL_SIZE/2)) + r * CONV4_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
                         end if;
                     end loop;
                 end loop;
@@ -180,65 +197,91 @@ architecture rtl of Conv1_Layer is
     end function;
 
 begin
-    conv1_mem : entity xil_defaultlib.Conv1_ROM
+    conv4_mem : entity xil_defaultlib.Conv4_ROM
         port map(
             clk => aclk,
-            en => conv1_en,
-            addr => conv1_addr,
-            dout => conv1_dout
+            en => conv4_en,
+            addr => conv4_addr,
+            dout => conv4_dout
         );
-
     s_axis_tready <= axi_in_ready;
     m_axis_tvalid <= axi_out_valid;
     m_axis_tkeep <= (others => '1');
     d_output <= (others => '0');
 
-    fetch_lines : process (aclk)
-        variable remaining_lines : integer range 0 to CONV1_KERNEL_SIZE;
+    ingress_lines : process (aclk)
+        variable remaining_lines : natural range 0 to CONV4_KERNEL_SIZE * CONV4_CHAN_INPUT := 0;
+        variable channel_id : natural range 0 to CONV4_CHAN_INPUT - 1 := 0;
+        -- variable row_id : natural range 0 to CONV4_FRAME_HEIGHT - 1 := 0;
+        variable clean_up_lines : natural range 0 to CONV4_CHAN_INPUT - 1;
     begin
         if rising_edge(aclk) then
             -- By default, do not accept data in
             axi_in_ready <= '0';
             -- Make the ready flag a pulse
             line_load_rdy <= '0';
+            -- Same for clean up
+            clean_up_rdy <= '0';
 
             if line_load_init = '1' then
-                remaining_lines := advance_lines;
+                remaining_lines := advance_lines * CONV4_CHAN_INPUT; -- Per row, I need INPUT amount of channels
                 line_load_active <= '1';
-            else
-                if line_load_active = '1' then
-                    if remaining_lines > 0 then
+
+            elsif line_load_active = '1' then
+                if remaining_lines > 0 then
+                    -- Insert last row padding
+                    if pad_bottom = '1' then
+                        for chan in 0 to (CONV4_CHAN_INPUT - 1) loop
+                            line_buffer(chan)(2) <= line_buffer(chan)(1);
+                            line_buffer(chan)(1) <= line_buffer(chan)(0);
+                            -- Insert an empty line
+                            line_buffer(chan)(0) <= (others => '0');
+                        end loop;
+                        remaining_lines := 0;
+                    else
                         -- AXI Stream in
                         -- If lines can be accepted, signal it
                         axi_in_ready <= '1';
                         if s_axis_tvalid = '1' and axi_in_ready = '1' then
-                            for chan in 0 to CONV1_CHAN_INPUT - 1 loop
-                                -- Move one line down the buffer.
-                                line_buffer(chan)(2) <= line_buffer(chan)(1);
-                                line_buffer(chan)(1) <= line_buffer(chan)(0);
-                                -- Insert the incoming line
-                                line_buffer(chan)(0) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
-                            end loop;
-
+                            channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
+                            -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
+                            -- Move one line down the buffer.
+                            line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
+                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
+                            -- Insert the incoming line
+                            line_buffer(channel_id)(0) <= s_axis_tdata;
                             if remaining_lines = 1 then
                                 axi_in_ready <= '0';
                             end if;
-                            -- Decrease counter
                             remaining_lines := remaining_lines - 1;
                         end if;
-                    else
-                        -- If last iteration, signal that operation is complete
-                        line_load_rdy <= '1';
-                        line_load_active <= '0';
                     end if;
+                else
+                    -- If last iteration, signal that operation is complete
+                    line_load_rdy <= '1';
+                    line_load_active <= '0';
                 end if;
+
+            elsif clean_up_init = '1' then
+                -- I am making boilerplate code for a clean up that takes more cycles, in case that ends up being the case
+                clean_up_active <= '1';
+                clean_up_lines := CONV4_KERNEL_SIZE - 1;
+            elsif clean_up_active = '1' then
+                for chan in 0 to (CONV4_CHAN_INPUT - 1) loop
+                    line_buffer(chan)(clean_up_lines) <= (others => '0');
+                end loop;
+                if clean_up_lines = 1 then
+                    clean_up_active <= '0';
+                    clean_up_rdy <= '1';
+                end if;
+                clean_up_lines := clean_up_lines - 1;
             end if;
         end if;
     end process;
 
     fetch_weights : process (aclk)
-        variable read_kernels : integer range 0 to CONV1_CONCURRENT_KERNELS := 0;
-        variable write_kernels : integer range 0 to CONV1_CONCURRENT_KERNELS := 0;
+        variable read_kernels : integer range 0 to CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT := 0;
+        variable write_kernels : integer range 0 to CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT := 0;
 
     begin
         -- I assume one word contains one kernel
@@ -247,27 +290,28 @@ begin
 
             -- Initial read
             if weight_load_init = '1' then
-                read_kernels := CONV1_CONCURRENT_KERNELS - 1;
-                write_kernels := CONV1_CONCURRENT_KERNELS - 1;
-                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONV1_CONCURRENT_KERNELS + CONV1_CONCURRENT_KERNELS - 1, conv1_addr'length));
-                conv1_en <= '1';
+                read_kernels := CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT - 1;
+                write_kernels := CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT - 1;
+                conv4_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT) + (CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT) - 1, conv4_addr'length));
+                conv4_en <= '1';
                 -- Load next address
             elsif read_kernels > 0 and weight_load_init = '0' then
                 read_kernels := read_kernels - 1;
-                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * CONV1_CONCURRENT_KERNELS + read_kernels, conv1_addr'length));
-                conv1_en <= '1';
+
+                conv4_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV4_CONCURRENT_KERNELS * CONV4_CHAN_INPUT) + read_kernels, conv4_addr'length));
+                conv4_en <= '1';
                 weight_valid <= '1';
             end if;
 
             -- Split the word into the several weights
             if weight_valid = '1' then
-                for j in 0 to (CONV1_KERNEL_SIZE ** 2) - 1 loop
-                    for i in 0 to CONV1_CHAN_INPUT - 1 loop
-                        kernel_buffer(i)(write_kernels)(j) <= conv1_dout(((j + 1) + (i * CONV1_KERNEL_SIZE ** 2)) * CONV1_PRECISION - 1 downto (j + (i * CONV1_KERNEL_SIZE ** 2)) * CONV1_PRECISION);
-                    end loop;
+                for j in 0 to (CONV4_KERNEL_SIZE ** 2) - 1 loop
+                    -- input = write/concurrent
+                    -- output = write % concurrent
+                    kernel_buffer(write_kernels mod CONV4_CHAN_INPUT)(write_kernels/CONV4_CHAN_INPUT)(j) <= conv4_dout((j + 1) * CONV4_PRECISION - 1 downto j * CONV4_PRECISION);
                 end loop;
                 if write_kernels = 0 then
-                    conv1_en <= '0';
+                    conv4_en <= '0';
                     weight_valid <= '0';
                     weight_load_rdy <= '1';
                 else
@@ -290,10 +334,10 @@ begin
                 -- output_line_buffer <= (others => '0');
 
             elsif convolution_active = '1' then
-                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                for k in 0 to CONV4_CONCURRENT_KERNELS - 1 loop
                     for c in 0 to COLUMS_PER_CYCLE - 1 loop
                         value := (others => '0');
-                        for i in 0 to CONV1_CHAN_INPUT - 1 loop
+                        for i in 0 to CONV4_CHAN_INPUT - 1 loop
                             value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c + convolution_col_idx) + value;
                         end loop;
 
@@ -303,7 +347,7 @@ begin
                         end if;
                     end loop;
                 end loop;
-                if convolution_col_idx < CONV1_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                if convolution_col_idx < CONV4_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
                     convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
                 else
                     convolution_rdy <= '1';
@@ -314,7 +358,8 @@ begin
     end process;
 
     flush : process (aclk, aresetn)
-        variable channel_id : integer range 0 to CONV1_CHAN_OUTPUT - 1 := 0;
+        variable channel_id : integer range 0 to CONV4_CHAN_OUTPUT - 1 := 0;
+        variable tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := (others => '0');
     begin
 
         if aresetn = '0' then
@@ -330,13 +375,14 @@ begin
                 -- currently holding a valid beat
                 if m_axis_tready = '1' then
 
-                    if channel_id < CONV1_CONCURRENT_KERNELS - 1 then
+                    if channel_id < CONV4_CONCURRENT_KERNELS - 1 then
                         -- handshake old beat, immediately load next beat
                         channel_id := channel_id + 1;
+                        tuser := std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV4_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
                         m_axis_tdata <= output_line_buffer(channel_id);
-                        m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
+                        m_axis_tuser <= tuser;
                         axi_out_valid <= '1';
-                        if out_y = CONV1_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV1_CONCURRENT_KERNELS) = CONV1_KERNEL_SIZE - 1 then
+                        if tuser = FINISH_CONDITION then
                             m_axis_tlast <= '1';
                         end if;
                     else
@@ -353,7 +399,7 @@ begin
                     axi_out_active <= '1';
                     channel_id := 0;
                     m_axis_tdata <= output_line_buffer(0);
-                    m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
+                    m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV4_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
                     axi_out_valid <= '1';
                 end if;
             end if;
@@ -379,6 +425,7 @@ begin
             line_load_init <= '0';
             convolution_init <= '0';
             axi_out_init <= '0';
+            clean_up_init <= '0';
 
             case state is
                 when IDLE =>
@@ -389,9 +436,9 @@ begin
                     state <= START_WINDOW;
 
                 when START_WINDOW =>
-                    -- first output pixel needs 3 fresh lines
+                    -- first output pixel needs 2 fresh lines
                     if first_window = '1' then
-                        advance_lines <= CONV1_KERNEL_SIZE;
+                        advance_lines <= CONV4_KERNEL_SIZE - 1;
                         line_load_init <= '1';
                         line_rdy_seen <= '0';
                         first_window <= '0';
@@ -432,7 +479,7 @@ begin
                     end if;
 
                 when NEXT_BATCH =>
-                    if batch_idx < (CONV1_CHAN_OUTPUT / CONV1_CONCURRENT_KERNELS) - 1 then
+                    if batch_idx < (CONV4_CHAN_OUTPUT / CONV4_CONCURRENT_KERNELS) - 1 then
                         batch_idx <= batch_idx + 1;
                         weight_batch_idx <= batch_idx + 1;
                         weight_load_init <= '1';
@@ -445,13 +492,26 @@ begin
                     end if;
 
                 when NEXT_POSITION =>
-                    if out_y < CONV1_FRAME_HEIGHT - 1 then
+                    if out_y < CONV4_FRAME_HEIGHT - 1 then
                         out_y <= out_y + 1;
                         advance_lines <= 1;
+
+                        if out_y = CONV4_FRAME_HEIGHT - 2 then
+                            pad_bottom <= '1'; -- next window inserts zero row
+                        else
+                            pad_bottom <= '0';
+                        end if;
+
                         line_load_init <= '1';
                         line_rdy_seen <= '0';
                         state <= START_WINDOW;
                     else
+                        clean_up_init <= '1';
+                        state <= CLEAN_UP;
+                    end if;
+
+                when CLEAN_UP =>
+                    if clean_up_rdy = '1' then
                         state <= DONE;
                     end if;
 

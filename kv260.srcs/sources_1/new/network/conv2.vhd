@@ -8,6 +8,7 @@ use ieee.numeric_std.all;
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
 use xil_defaultlib.weights_pkg.all;
+use xil_defaultlib.weights_value_pkg.all;
 
 entity Conv2_ROM is
     port (

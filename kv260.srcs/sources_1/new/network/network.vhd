@@ -9,7 +9,7 @@ use xil_defaultlib.weights_pkg.all;
 entity SpikeVision is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 16; -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
         AXIS_TUSER_WIDTH_G : positive := 15
     );
     port (
@@ -91,6 +91,22 @@ architecture rtl of SpikeVision is
     signal maxpool3_conv4_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal maxpool3_conv4_tlast : std_logic;
     signal maxpool3_debug : std_logic_vector(11 downto 0);
+    -- CONV4 TO MAXPOOL4
+    signal conv4_maxpool4_tready : std_logic;
+    signal conv4_maxpool4_tvalid : std_logic;
+    signal conv4_maxpool4_tdata : std_logic_vector(MAXPOOL4_TDATA_WIDTH - 1 downto 0);
+    signal conv4_maxpool4_tkeep : std_logic_vector(MAXPOOL4_TDATA_WIDTH/8 - 1 downto 0);
+    signal conv4_maxpool4_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
+    signal conv4_maxpool4_tlast : std_logic;
+    signal conv4_debug : std_logic_vector(11 downto 0);
+    -- MAXPOOL4 TO CONV5
+    signal maxpool4_conv5_tready : std_logic;
+    signal maxpool4_conv5_tvalid : std_logic;
+    signal maxpool4_conv5_tdata : std_logic_vector(CONV5_TDATA_WIDTH - 1 downto 0);
+    signal maxpool4_conv5_tkeep : std_logic_vector(CONV5_TDATA_WIDTH/8 - 1 downto 0);
+    signal maxpool4_conv5_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
+    signal maxpool4_conv5_tlast : std_logic;
+    signal maxpool4_debug : std_logic_vector(11 downto 0);
 begin
     s_axis_tready <= dma_conv1_tready;
     dma_conv1_tvalid <= s_axis_tvalid;
@@ -99,12 +115,12 @@ begin
     dma_conv1_tuser <= s_axis_tuser;
     dma_conv1_tlast <= s_axis_tlast;
 
-    maxpool3_conv4_tready <= m_axis_tready;
-    m_axis_tvalid <= maxpool3_conv4_tvalid;
-    m_axis_tdata <= maxpool3_conv4_tdata;
-    m_axis_tkeep <= maxpool3_conv4_tkeep;
-    m_axis_tuser <= maxpool3_conv4_tuser;
-    m_axis_tlast <= maxpool3_conv4_tlast;
+    maxpool4_conv5_tready <= m_axis_tready;
+    m_axis_tvalid <= maxpool4_conv5_tvalid;
+    m_axis_tdata <= maxpool4_conv5_tdata;
+    m_axis_tkeep <= maxpool4_conv5_tkeep;
+    m_axis_tuser <= maxpool4_conv5_tuser;
+    m_axis_tlast <= maxpool4_conv5_tlast;
 
     conv1 : entity xil_defaultlib.Conv1_Layer
         generic map(
@@ -243,5 +259,50 @@ begin
             m_axis_tuser => maxpool3_conv4_tuser,
             m_axis_tlast => maxpool3_conv4_tlast,
             d_output => maxpool3_debug
+        );
+    conv4 : entity xil_defaultlib.Conv4_Layer
+        generic map(
+            S_AXIS_TDATA_WIDTH_G => CONV4_TDATA_WIDTH,
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL4_TDATA_WIDTH,
+            COLUMS_PER_CYCLE => 4
+        )
+        port map(
+            aclk => aclk,
+            aresetn => aresetn,
+            s_axis_tready => maxpool3_conv4_tready,
+            s_axis_tvalid => maxpool3_conv4_tvalid,
+            s_axis_tdata => maxpool3_conv4_tdata,
+            s_axis_tkeep => maxpool3_conv4_tkeep,
+            s_axis_tuser => maxpool3_conv4_tuser,
+            s_axis_tlast => maxpool3_conv4_tlast,
+            m_axis_tready => conv4_maxpool4_tready,
+            m_axis_tvalid => conv4_maxpool4_tvalid,
+            m_axis_tdata => conv4_maxpool4_tdata,
+            m_axis_tkeep => conv4_maxpool4_tkeep,
+            m_axis_tuser => conv4_maxpool4_tuser,
+            m_axis_tlast => conv4_maxpool4_tlast,
+            d_output => conv4_debug
+        );
+    maxpool4 : entity xil_defaultlib.Maxpool4_Layer
+        generic map(
+            S_AXIS_TDATA_WIDTH_G => MAXPOOL4_TDATA_WIDTH,
+            M_AXIS_TDATA_WIDTH_G => CONV5_TDATA_WIDTH
+        )
+        port map(
+            aclk => aclk,
+            aresetn => aresetn,
+            s_axis_tready => conv4_maxpool4_tready,
+            s_axis_tvalid => conv4_maxpool4_tvalid,
+            s_axis_tdata => conv4_maxpool4_tdata,
+            s_axis_tkeep => conv4_maxpool4_tkeep,
+            s_axis_tuser => conv4_maxpool4_tuser,
+            s_axis_tlast => conv4_maxpool4_tlast,
+            m_axis_tready => maxpool4_conv5_tready,
+            m_axis_tvalid => maxpool4_conv5_tvalid,
+            m_axis_tdata => maxpool4_conv5_tdata,
+            m_axis_tkeep => maxpool4_conv5_tkeep,
+            m_axis_tuser => maxpool4_conv5_tuser,
+            m_axis_tlast => maxpool4_conv5_tlast,
+            d_output => maxpool4_debug
         );
 end rtl;

@@ -8,6 +8,7 @@ use ieee.numeric_std.all;
 library xil_defaultlib;
 use xil_defaultlib.constants_pkg.all;
 use xil_defaultlib.weights_pkg.all;
+use xil_defaultlib.weights_value_pkg.all;
 
 entity Conv3_ROM is
     port (
@@ -24,13 +25,13 @@ end entity Conv3_ROM;
 
 architecture rtl of Conv3_ROM is
 
-    -- signal rom : conv3_mem_t := to_conv3_mem(CONV3_WEIGHTS);
-    constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
-    x"7F" & x"7F" & x"7F" &
-    x"7F" & x"7F" & x"7F" &
-    x"7F" & x"7F" & x"7F");
+    signal rom : conv3_mem_t := to_conv3_mem(CONV3_WEIGHTS);
+    -- constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F");
 
-    signal rom : conv3_mem_t := (others => (WEIGHT_INIT));
+    -- signal rom : conv3_mem_t := (others => (WEIGHT_INIT));
 
     attribute ram_style : string;
     attribute ram_style of rom : signal is "block";
@@ -62,8 +63,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity Conv3_Layer is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 32; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 32; -- 128 per line * 2 input channels
+        S_AXIS_TDATA_WIDTH_G : positive := 32;
+        M_AXIS_TDATA_WIDTH_G : positive := 32;
         COLUMS_PER_CYCLE : positive := 32
     );
     port (
