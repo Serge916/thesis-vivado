@@ -101,6 +101,7 @@ architecture rtl of Conv2_Layer is
         WAIT_FLUSH,
         NEXT_BATCH,
         NEXT_POSITION,
+        CLEAN_UP,
         DONE
     );
     signal state : state_t := IDLE;
@@ -110,6 +111,10 @@ architecture rtl of Conv2_Layer is
     signal weight_rdy_seen : std_logic := '0';
     signal line_rdy_seen : std_logic := '0';
     signal pad_bottom : std_logic := '0';
+    signal clean_up_init : std_logic := '0';
+    signal clean_up_rdy : std_logic := '0';
+    signal clean_up_active : std_logic := '0';
+    constant FINISH_CONDITION : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := std_logic_vector(to_unsigned(CONV2_FRAME_HEIGHT - 1, ROW_ID_WIDTH_C) & to_unsigned(CONV2_CHAN_OUTPUT - 1, CHANNEL_ID_WIDTH_C));
 
     -- Signals for Kernel
     -- Index 0 is top left, index 8 is bottom right
@@ -200,52 +205,68 @@ begin
         variable remaining_lines : natural range 0 to CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT := 0;
         variable channel_id : natural range 0 to CONV2_CHAN_INPUT - 1 := 0;
         -- variable row_id : natural range 0 to CONV2_FRAME_HEIGHT - 1 := 0;
-        variable bubble : natural range 0 to CONV2_KERNEL_SIZE - 1;
+        variable clean_up_lines : natural range 0 to CONV2_CHAN_INPUT - 1;
     begin
         if rising_edge(aclk) then
             -- By default, do not accept data in
             axi_in_ready <= '0';
             -- Make the ready flag a pulse
             line_load_rdy <= '0';
+            -- Same for clean up
+            clean_up_rdy <= '0';
+
             if line_load_init = '1' then
                 remaining_lines := advance_lines * CONV2_CHAN_INPUT; -- Per row, I need INPUT amount of channels
                 line_load_active <= '1';
-            else
-                if line_load_active = '1' then
-                    if remaining_lines > 0 then
-                        -- Insert last row padding
-                        if pad_bottom = '1' then
-                            for chan in 0 to (CONV2_CHAN_INPUT - 1) loop
-                                line_buffer(chan)(2) <= line_buffer(chan)(1);
-                                line_buffer(chan)(1) <= line_buffer(chan)(0);
-                                -- Insert an empty line
-                                line_buffer(chan)(0) <= (others => '0');
-                            end loop;
-                            remaining_lines := 0;
-                        else
-                            -- AXI Stream in
-                            -- If lines can be accepted, signal it
-                            axi_in_ready <= '1';
-                            if s_axis_tvalid = '1' and axi_in_ready = '1' then
-                                channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
-                                -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
-                                -- Move one line down the buffer.
-                                line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
-                                line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
-                                -- Insert the incoming line
-                                line_buffer(channel_id)(0) <= s_axis_tdata;
-                                if remaining_lines = 1 then
-                                    axi_in_ready <= '0';
-                                end if;
-                            end if;
-                            remaining_lines := remaining_lines - 1;
-                        end if;
+
+            elsif line_load_active = '1' then
+                if remaining_lines > 0 then
+                    -- Insert last row padding
+                    if pad_bottom = '1' then
+                        for chan in 0 to (CONV2_CHAN_INPUT - 1) loop
+                            line_buffer(chan)(2) <= line_buffer(chan)(1);
+                            line_buffer(chan)(1) <= line_buffer(chan)(0);
+                            -- Insert an empty line
+                            line_buffer(chan)(0) <= (others => '0');
+                        end loop;
+                        remaining_lines := 0;
                     else
-                        -- If last iteration, signal that operation is complete
-                        line_load_rdy <= '1';
-                        line_load_active <= '0';
+                        -- AXI Stream in
+                        -- If lines can be accepted, signal it
+                        axi_in_ready <= '1';
+                        if s_axis_tvalid = '1' and axi_in_ready = '1' then
+                            channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
+                            -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
+                            -- Move one line down the buffer.
+                            line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
+                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
+                            -- Insert the incoming line
+                            line_buffer(channel_id)(0) <= s_axis_tdata;
+                            if remaining_lines = 1 then
+                                axi_in_ready <= '0';
+                            end if;
+                        end if;
+                        remaining_lines := remaining_lines - 1;
                     end if;
+                else
+                    -- If last iteration, signal that operation is complete
+                    line_load_rdy <= '1';
+                    line_load_active <= '0';
                 end if;
+
+            elsif clean_up_init = '1' then
+                -- I am making boilerplate code for a clean up that takes more cycles, in case that ends up being the case
+                clean_up_active <= '1';
+                clean_up_lines := CONV2_KERNEL_SIZE - 1;
+            elsif clean_up_active = '1' then
+                for chan in 0 to (CONV2_CHAN_INPUT - 1) loop
+                    line_buffer(chan)(clean_up_lines) <= (others => '0');
+                end loop;
+                if clean_up_lines = 1 then
+                    clean_up_active <= '0';
+                    clean_up_rdy <= '1';
+                end if;
+                clean_up_lines := clean_up_lines - 1;
             end if;
         end if;
     end process;
@@ -330,6 +351,7 @@ begin
 
     flush : process (aclk, aresetn)
         variable channel_id : integer range 0 to CONV2_CHAN_OUTPUT - 1 := 0;
+        variable tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := (others => '0');
     begin
 
         if aresetn = '0' then
@@ -348,10 +370,11 @@ begin
                     if channel_id < CONV2_CONCURRENT_KERNELS - 1 then
                         -- handshake old beat, immediately load next beat
                         channel_id := channel_id + 1;
+                        tuser := std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
                         m_axis_tdata <= output_line_buffer(channel_id);
-                        m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
+                        m_axis_tuser <= tuser;
                         axi_out_valid <= '1';
-                        if out_y = CONV2_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV2_CONCURRENT_KERNELS) = CONV2_KERNEL_SIZE - 1 then
+                        if tuser = FINISH_CONDITION then
                             m_axis_tlast <= '1';
                         end if;
                     else
@@ -394,6 +417,7 @@ begin
             line_load_init <= '0';
             convolution_init <= '0';
             axi_out_init <= '0';
+            clean_up_init <= '0';
 
             case state is
                 when IDLE =>
@@ -474,6 +498,12 @@ begin
                         line_rdy_seen <= '0';
                         state <= START_WINDOW;
                     else
+                        clean_up_init <= '1';
+                        state <= CLEAN_UP;
+                    end if;
+
+                when CLEAN_UP =>
+                    if clean_up_rdy = '1' then
                         state <= DONE;
                     end if;
 
