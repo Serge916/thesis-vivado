@@ -245,8 +245,8 @@ begin
                             if remaining_lines = 1 then
                                 axi_in_ready <= '0';
                             end if;
+                            remaining_lines := remaining_lines - 1;
                         end if;
-                        remaining_lines := remaining_lines - 1;
                     end if;
                 else
                     -- If last iteration, signal that operation is complete
