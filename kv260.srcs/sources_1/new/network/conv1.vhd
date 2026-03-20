@@ -99,7 +99,6 @@ architecture rtl of Conv1_Layer is
         DONE
     );
     signal state : state_t := IDLE;
-    signal next_state : state_t;
     signal out_y : integer range 0 to CONV1_FRAME_HEIGHT - 1 := 0;
     signal batch_idx : integer range 0 to (CONV1_CHAN_OUTPUT)/CONV1_CONCURRENT_KERNELS - 1 := 0;
     signal first_window : std_logic := '1';

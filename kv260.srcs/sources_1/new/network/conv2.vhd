@@ -25,6 +25,12 @@ end entity Conv2_ROM;
 architecture rtl of Conv2_ROM is
 
     signal rom : conv2_mem_t := to_conv2_mem(CONV2_WEIGHTS);
+    -- constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F" &
+    -- x"7F" & x"7F" & x"7F");
+
+    -- signal rom : conv2_mem_t := (others => (WEIGHT_INIT));
 
     attribute ram_style : string;
     attribute ram_style of rom : signal is "block";
@@ -132,7 +138,7 @@ architecture rtl of Conv2_Layer is
     subtype single_line_buffer_t is std_logic_vector(CONV2_FRAME_WIDTH - 1 downto 0);
     type channel_line_buffer_t is array (0 to CONV2_KERNEL_SIZE - 1) of single_line_buffer_t;
     type line_buffer_t is array (0 to CONV2_CHAN_INPUT - 1) of channel_line_buffer_t;
-    signal line_buffer : line_buffer_t;
+    signal line_buffer : line_buffer_t := (others => (others => (others => '0')));
     signal advance_lines : integer range 0 to CONV2_KERNEL_SIZE := 0;
     signal line_load_rdy : std_logic := '0';
     signal line_load_init : std_logic := '0';

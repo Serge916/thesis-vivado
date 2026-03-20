@@ -12,7 +12,7 @@ end entity;
 architecture sim of network_tb is
 
     constant S_AXIS_TDATA_WIDTH_G : positive := 256;
-    constant M_AXIS_TDATA_WIDTH_G : positive := 64;
+    constant M_AXIS_TDATA_WIDTH_G : positive := 32;
 
     signal aclk : std_logic := '0';
     signal aresetn : std_logic := '0';

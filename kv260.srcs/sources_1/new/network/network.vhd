@@ -9,7 +9,7 @@ use xil_defaultlib.weights_pkg.all;
 entity SpikeVision is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 32; -- 128 per line * 2 input channels
         AXIS_TUSER_WIDTH_G : positive := 15
     );
     port (
@@ -67,6 +67,14 @@ architecture rtl of SpikeVision is
     signal conv2_maxpool2_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal conv2_maxpool2_tlast : std_logic;
     signal conv2_debug : std_logic_vector(11 downto 0);
+    -- MAXPOOL2 TO CONV3
+    signal maxpool2_conv3_tready : std_logic;
+    signal maxpool2_conv3_tvalid : std_logic;
+    signal maxpool2_conv3_tdata : std_logic_vector(CONV3_TDATA_WIDTH - 1 downto 0);
+    signal maxpool2_conv3_tkeep : std_logic_vector(CONV3_TDATA_WIDTH/8 - 1 downto 0);
+    signal maxpool2_conv3_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
+    signal maxpool2_conv3_tlast : std_logic;
+    signal maxpool2_debug : std_logic_vector(11 downto 0);
 begin
     s_axis_tready <= dma_conv1_tready;
     dma_conv1_tvalid <= s_axis_tvalid;
@@ -75,12 +83,12 @@ begin
     dma_conv1_tuser <= s_axis_tuser;
     dma_conv1_tlast <= s_axis_tlast;
 
-    conv2_maxpool2_tready <= m_axis_tready;
-    m_axis_tvalid <= conv2_maxpool2_tvalid;
-    m_axis_tdata <= conv2_maxpool2_tdata;
-    m_axis_tkeep <= conv2_maxpool2_tkeep;
-    m_axis_tuser <= conv2_maxpool2_tuser;
-    m_axis_tlast <= conv2_maxpool2_tlast;
+    maxpool2_conv3_tready <= m_axis_tready;
+    m_axis_tvalid <= maxpool2_conv3_tvalid;
+    m_axis_tdata <= maxpool2_conv3_tdata;
+    m_axis_tkeep <= maxpool2_conv3_tkeep;
+    m_axis_tuser <= maxpool2_conv3_tuser;
+    m_axis_tlast <= maxpool2_conv3_tlast;
 
     conv1 : entity xil_defaultlib.Conv1_Layer
         generic map(
@@ -151,5 +159,27 @@ begin
             m_axis_tuser => conv2_maxpool2_tuser,
             m_axis_tlast => conv2_maxpool2_tlast,
             d_output => conv2_debug
+        );
+    maxpool2 : entity xil_defaultlib.Maxpool2_Layer
+        generic map(
+            S_AXIS_TDATA_WIDTH_G => MAXPOOL2_TDATA_WIDTH,
+            M_AXIS_TDATA_WIDTH_G => CONV3_TDATA_WIDTH
+        )
+        port map(
+            aclk => aclk,
+            aresetn => aresetn,
+            s_axis_tready => conv2_maxpool2_tready,
+            s_axis_tvalid => conv2_maxpool2_tvalid,
+            s_axis_tdata => conv2_maxpool2_tdata,
+            s_axis_tkeep => conv2_maxpool2_tkeep,
+            s_axis_tuser => conv2_maxpool2_tuser,
+            s_axis_tlast => conv2_maxpool2_tlast,
+            m_axis_tready => maxpool2_conv3_tready,
+            m_axis_tvalid => maxpool2_conv3_tvalid,
+            m_axis_tdata => maxpool2_conv3_tdata,
+            m_axis_tkeep => maxpool2_conv3_tkeep,
+            m_axis_tuser => maxpool2_conv3_tuser,
+            m_axis_tlast => maxpool2_conv3_tlast,
+            d_output => maxpool2_debug
         );
 end rtl;
