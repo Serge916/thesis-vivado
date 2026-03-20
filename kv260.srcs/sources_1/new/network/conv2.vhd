@@ -282,87 +282,87 @@ begin
 
     end process;
 
-    -- convolution : process (aclk, aresetn)
-    --     variable value : accumulate_t := (others => '0');
-    -- begin
-    --     if rising_edge(aclk) then
-    --         convolution_rdy <= '0';
+    convolution : process (aclk, aresetn)
+        variable value : accumulate_t := (others => '0');
+    begin
+        if rising_edge(aclk) then
+            convolution_rdy <= '0';
 
-    --         if convolution_init = '1' then
-    --             convolution_active <= '1';
-    --             convolution_col_idx <= 0;
-    --             -- output_line_buffer <= (others => '0');
+            if convolution_init = '1' then
+                convolution_active <= '1';
+                convolution_col_idx <= 0;
+                -- output_line_buffer <= (others => '0');
 
-    --         elsif convolution_active = '1' then
-    --             for k in 0 to CONV2_CONCURRENT_KERNELS - 1 loop
-    --                 for c in 0 to COLUMS_PER_CYCLE - 1 loop
-    --                     value := (others => '0');
-    --                     for i in 0 to CONV2_CHAN_INPUT - 1 loop
-    --                         value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c + convolution_col_idx) + value;
-    --                     end loop;
+            elsif convolution_active = '1' then
+                for k in 0 to CONV2_CONCURRENT_KERNELS - 1 loop
+                    for c in 0 to COLUMS_PER_CYCLE - 1 loop
+                        value := (others => '0');
+                        for i in 0 to CONV2_CHAN_INPUT - 1 loop
+                            value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c + convolution_col_idx) + value;
+                        end loop;
 
-    --                     output_line_buffer(k)(c + convolution_col_idx) <= '0';
-    --                     if value > 255 then
-    --                         output_line_buffer(k)(c + convolution_col_idx) <= '1';
-    --                     end if;
-    --                 end loop;
-    --             end loop;
-    --             if convolution_col_idx < CONV2_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
-    --                 convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
-    --             else
-    --                 convolution_rdy <= '1';
-    --                 convolution_active <= '0';
-    --             end if;
-    --         end if;
-    --     end if;
-    -- end process;
+                        output_line_buffer(k)(c + convolution_col_idx) <= '0';
+                        if value > 255 then
+                            output_line_buffer(k)(c + convolution_col_idx) <= '1';
+                        end if;
+                    end loop;
+                end loop;
+                if convolution_col_idx < CONV2_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                    convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
+                else
+                    convolution_rdy <= '1';
+                    convolution_active <= '0';
+                end if;
+            end if;
+        end if;
+    end process;
 
-    -- flush : process (aclk, aresetn)
-    --     variable channel_id : integer range 0 to CONV2_CHAN_OUTPUT - 1 := 0;
-    -- begin
+    flush : process (aclk, aresetn)
+        variable channel_id : integer range 0 to CONV2_CHAN_OUTPUT - 1 := 0;
+    begin
 
-    --     if aresetn = '0' then
-    --         m_axis_tdata <= (others => '0');
-    --         axi_out_valid <= '0';
-    --         axi_out_rdy <= '0';
+        if aresetn = '0' then
+            m_axis_tdata <= (others => '0');
+            axi_out_valid <= '0';
+            axi_out_rdy <= '0';
 
-    --     elsif rising_edge(aclk) then
-    --         axi_out_rdy <= '0';
-    --         m_axis_tlast <= '0';
+        elsif rising_edge(aclk) then
+            axi_out_rdy <= '0';
+            m_axis_tlast <= '0';
 
-    --         if axi_out_active = '1' then
-    --             -- currently holding a valid beat
-    --             if m_axis_tready = '1' then
+            if axi_out_active = '1' then
+                -- currently holding a valid beat
+                if m_axis_tready = '1' then
 
-    --                 if channel_id < CONV2_CONCURRENT_KERNELS - 1 then
-    --                     -- handshake old beat, immediately load next beat
-    --                     channel_id := channel_id + 1;
-    --                     m_axis_tdata <= output_line_buffer(channel_id);
-    --                     m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
-    --                     axi_out_valid <= '1';
-    --                     if out_y = CONV2_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV2_CONCURRENT_KERNELS) = CONV2_KERNEL_SIZE - 1 then
-    --                         m_axis_tlast <= '1';
-    --                     end if;
-    --                 else
-    --                     -- finished burst
-    --                     axi_out_rdy <= '1';
-    --                     axi_out_valid <= '0';
-    --                     axi_out_active <= '0';
-    --                 end if;
-    --             end if;
+                    if channel_id < CONV2_CONCURRENT_KERNELS - 1 then
+                        -- handshake old beat, immediately load next beat
+                        channel_id := channel_id + 1;
+                        m_axis_tdata <= output_line_buffer(channel_id);
+                        m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
+                        axi_out_valid <= '1';
+                        if out_y = CONV2_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV2_CONCURRENT_KERNELS) = CONV2_KERNEL_SIZE - 1 then
+                            m_axis_tlast <= '1';
+                        end if;
+                    else
+                        -- finished burst
+                        axi_out_rdy <= '1';
+                        axi_out_valid <= '0';
+                        axi_out_active <= '0';
+                    end if;
+                end if;
 
-    --         else
-    --             -- idle, can accept a new burst
-    --             if axi_out_init = '1' then
-    --                 axi_out_active <= '1';
-    --                 channel_id := 0;
-    --                 m_axis_tdata <= output_line_buffer(0);
-    --                 m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
-    --                 axi_out_valid <= '1';
-    --             end if;
-    --         end if;
-    --     end if;
-    -- end process;
+            else
+                -- idle, can accept a new burst
+                if axi_out_init = '1' then
+                    axi_out_active <= '1';
+                    channel_id := 0;
+                    m_axis_tdata <= output_line_buffer(0);
+                    m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV2_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
+                    axi_out_valid <= '1';
+                end if;
+            end if;
+        end if;
+    end process;
 
     FSM : process (aclk, aresetn)
     begin
