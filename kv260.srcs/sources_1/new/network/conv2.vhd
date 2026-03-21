@@ -65,7 +65,7 @@ entity Conv2_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        COLUMS_PER_CYCLE : positive := 32
+        COLUMS_PER_CYCLE : positive := 1
     );
     port (
         -- Clock and Reset
@@ -346,7 +346,7 @@ begin
                         end if;
                     end loop;
                 end loop;
-                if convolution_col_idx < CONV2_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                if (convolution_col_idx + COLUMS_PER_CYCLE) < CONV2_FRAME_WIDTH then
                     convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
                 else
                     convolution_rdy <= '1';

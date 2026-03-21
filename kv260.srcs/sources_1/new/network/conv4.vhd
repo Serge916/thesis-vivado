@@ -66,7 +66,7 @@ entity Conv4_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 16;
         M_AXIS_TDATA_WIDTH_G : positive := 16;
-        COLUMS_PER_CYCLE : positive := 16
+        COLUMS_PER_CYCLE : positive := 1
     );
     port (
         -- Clock and Reset
@@ -347,7 +347,7 @@ begin
                         end if;
                     end loop;
                 end loop;
-                if convolution_col_idx < CONV4_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                if (convolution_col_idx + COLUMS_PER_CYCLE) < CONV4_FRAME_WIDTH then
                     convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
                 else
                     convolution_rdy <= '1';

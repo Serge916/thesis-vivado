@@ -56,7 +56,7 @@ entity Conv1_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 128; -- 128 per line * 2 input channels
-        COLUMS_PER_CYCLE : positive := 32
+        COLUMS_PER_CYCLE : positive := 4
     );
     port (
         -- Clock and Reset
@@ -124,7 +124,7 @@ architecture rtl of Conv1_Layer is
     subtype single_line_buffer_t is std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
     type channel_line_buffer_t is array (0 to CONV1_KERNEL_SIZE - 1) of single_line_buffer_t;
     type line_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_line_buffer_t;
-    signal line_buffer : line_buffer_t;
+    signal line_buffer : line_buffer_t := (others => (others => (others => '0')));
     signal advance_lines : integer range 0 to CONV1_KERNEL_SIZE := 0;
     signal line_load_rdy : std_logic := '0';
     signal line_load_init : std_logic := '0';
@@ -145,6 +145,7 @@ architecture rtl of Conv1_Layer is
     signal axi_out_init : std_logic := '0';
     signal axi_out_active : std_logic := '0';
     signal axi_out_rdy : std_logic := '0';
+    constant FINISH_CONDITION : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := std_logic_vector(to_unsigned(CONV1_FRAME_HEIGHT - 1, ROW_ID_WIDTH_C) & to_unsigned(CONV1_CHAN_OUTPUT - 1, CHANNEL_ID_WIDTH_C));
 
     -- Varied debug signals
 
@@ -304,7 +305,7 @@ begin
                         end if;
                     end loop;
                 end loop;
-                if convolution_col_idx < CONV1_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                if (convolution_col_idx + COLUMS_PER_CYCLE) < CONV1_FRAME_WIDTH then
                     convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
                 else
                     convolution_rdy <= '1';
@@ -316,6 +317,7 @@ begin
 
     flush : process (aclk, aresetn)
         variable channel_id : integer range 0 to CONV1_CHAN_OUTPUT - 1 := 0;
+        variable tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     begin
 
         if aresetn = '0' then
@@ -334,10 +336,11 @@ begin
                     if channel_id < CONV1_CONCURRENT_KERNELS - 1 then
                         -- handshake old beat, immediately load next beat
                         channel_id := channel_id + 1;
+                        tuser := std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
                         m_axis_tdata <= output_line_buffer(channel_id);
-                        m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(channel_id + batch_idx * CONV1_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C));
+                        m_axis_tuser <= tuser;
                         axi_out_valid <= '1';
-                        if out_y = CONV1_FRAME_HEIGHT - 1 and (channel_id + batch_idx * CONV1_CONCURRENT_KERNELS) = CONV1_KERNEL_SIZE - 1 then
+                        if tuser = FINISH_CONDITION then
                             m_axis_tlast <= '1';
                         end if;
                     else
