@@ -346,7 +346,7 @@ begin
                         end if;
                     end loop;
                 end loop;
-                if convolution_col_idx < CONV3_FRAME_WIDTH - COLUMS_PER_CYCLE - 1 then
+                if (convolution_col_idx + COLUMS_PER_CYCLE) < CONV3_FRAME_WIDTH then
                     convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
                 else
                     convolution_rdy <= '1';
