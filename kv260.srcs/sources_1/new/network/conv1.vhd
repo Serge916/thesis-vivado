@@ -141,16 +141,26 @@ architecture rtl of Conv1_Layer is
     signal remaining_operations : natural range 0 to CONV1_CHAN_INPUT;
     type accumulate_reg_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of accumulate_t;
     signal value : accumulate_reg_t := (others => (others => '0'));
-    signal partial_value : accumulate_reg_t := (others => (others => '0'));
-    signal advance_column : std_logic := '0';
     type operation_fsm_t is (
-        FIRST_ACCUMULATE,
-        ACCUMULATE,
-        LAST_ACCUMULATE,
+        PREPARE,
         WRITE_BACK
     );
     signal operation_fsm : operation_fsm_t;
-
+    -- Signals for convolution pipeline
+    signal line_buffer_operation : channel_line_buffer_t;
+    signal kernel_buffer_operation : channel_kernel_buffer_t;
+    signal column_operation : integer range 0 to CONV1_FRAME_WIDTH - 1;
+    type convolution_terms_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of signed(CONV1_PRECISION - 1 downto 0);
+    signal convolution_terms : convolution_terms_t := (others => (to_signed(0, CONV1_PRECISION)));
+    type adder_tree_first_t is array (0 to 4) of accumulate_t;
+    signal adder_tree_first : adder_tree_first_t;
+    type adder_tree_second_t is array (0 to 2) of accumulate_t;
+    signal adder_tree_second : adder_tree_second_t;
+    signal result : accumulate_t := (others => '0');
+    signal convolution_func_rdy : std_logic := '0';
+    signal convolution_func_init : std_logic := '0';
+    signal convolution_func_wait : std_logic := '0';
+    signal convolution_func_stage_valid : std_logic_vector(0 to 2) := (others => '0');
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
     signal axi_out_valid : std_logic := '0';
@@ -160,19 +170,6 @@ architecture rtl of Conv1_Layer is
     constant FINISH_CONDITION : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0) := std_logic_vector(to_unsigned(CONV1_FRAME_HEIGHT - 1, ROW_ID_WIDTH_C) & to_unsigned(CONV1_CHAN_OUTPUT - 1, CHANNEL_ID_WIDTH_C));
 
     -- Varied debug signals
-
-    function convolution_func(lines : channel_line_buffer_t; kernel : single_kernel_buffer_t; central_column : natural) return accumulate_t is
-        variable accumulated : accumulate_t := (others => '0');
-    begin
-        for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-            for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
-                if lines(r)(central_column + 1 + c) = '1' then -- +1 to account for padding
-                    accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
-                end if;
-            end loop;
-        end loop;
-        return accumulated;
-    end function;
 
 begin
     conv1_mem : entity xil_defaultlib.Conv1_ROM
@@ -279,54 +276,43 @@ begin
     begin
         if rising_edge(aclk) then
             convolution_rdy <= '0';
+            convolution_func_init <= '0';
 
             if convolution_init = '1' then
                 convolution_active <= '1';
                 convolution_col_idx <= 0;
                 remaining_operations <= CONV1_CHAN_INPUT - 1;
                 value <= (others => to_signed(0, CONV1_ACCUM_WIDTH_C));
-                operation_fsm <= FIRST_ACCUMULATE;
+                operation_fsm <= PREPARE;
+                convolution_func_wait <= '0';
                 -- output_line_buffer <= (others => '0');
 
             elsif convolution_active = '1' then
 
                 case operation_fsm is
-                    when FIRST_ACCUMULATE =>
-                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                            partial_value(k) <= convolution_func(line_buffer(remaining_operations), kernel_buffer(remaining_operations)(k), convolution_col_idx);
-                        end loop;
+                    when PREPARE =>
+                        if convolution_func_wait = '0' then
+                            line_buffer_operation <= line_buffer(remaining_operations);
+                            kernel_buffer_operation <= kernel_buffer(remaining_operations);
+                            column_operation <= convolution_col_idx;
+                            convolution_func_init <= '1';
+                            convolution_func_wait <= '1';
 
-                        if remaining_operations > 0 then
-                            remaining_operations <= remaining_operations - 1;
-                            operation_fsm <= ACCUMULATE;
-                        else
-                            operation_fsm <= LAST_ACCUMULATE;
+                        elsif convolution_func_rdy = '1' then
+                            value(0) <= value(0) + result; -- One kernel for now, hardcoded
+                            convolution_func_wait <= '0';
+                            if remaining_operations > 0 then
+                                remaining_operations <= remaining_operations - 1;
+                            else
+                                operation_fsm <= WRITE_BACK;
+                            end if;
                         end if;
-
-                    when ACCUMULATE =>
-                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                            -- Calculate one input channel at a time
-                            partial_value(k) <= convolution_func(line_buffer(remaining_operations), kernel_buffer(remaining_operations)(k), convolution_col_idx);
-                            value(k) <= partial_value(k) + value(k);
-                        end loop;
-
-                        if remaining_operations > 0 then
-                            remaining_operations <= remaining_operations - 1;
-                        else
-                            operation_fsm <= LAST_ACCUMULATE;
-                        end if;
-
-                    when LAST_ACCUMULATE =>
-                        -- Add the last partial result
-                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                            value(k) <= partial_value(k) + value(k);
-                        end loop;
-                        operation_fsm <= WRITE_BACK;
 
                     when WRITE_BACK =>
                         -- Assign the output pixel its binary value
+                        -- FOR NOW ONLY CHANNEL 0 IS NOT GARBAGE
                         for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                            if value(k) > 255 then
+                            if value(k) > to_signed(255, value(k)'length) then
                                 output_line_buffer(k)(convolution_col_idx) <= '1';
                             else
                                 output_line_buffer(k)(convolution_col_idx) <= '0';
@@ -337,14 +323,60 @@ begin
                         if convolution_col_idx < CONV1_FRAME_WIDTH - 1 then
                             convolution_col_idx <= convolution_col_idx + 1;
                             remaining_operations <= CONV1_CHAN_INPUT - 1;
+                            operation_fsm <= PREPARE;
                         else
                             convolution_rdy <= '1';
                             convolution_active <= '0';
                         end if;
-                        operation_fsm <= FIRST_ACCUMULATE;
                 end case;
 
             end if;
+        end if;
+    end process;
+
+    convolution_pipeline : process (aclk)
+    begin
+        if rising_edge(aclk) then
+            -- Move the validity flag forward
+            convolution_func_rdy <= convolution_func_stage_valid(2);
+            convolution_func_stage_valid(2) <= convolution_func_stage_valid(1);
+            convolution_func_stage_valid(1) <= convolution_func_stage_valid(0);
+            convolution_func_stage_valid(0) <= convolution_func_init;
+
+            -- Stage 1: Get the valid terms
+            if convolution_func_init = '1' then
+                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+                    for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
+                        if line_buffer_operation(r)(column_operation + 1 + c) = '1' then -- +1 to account for padding, I could simplify the operation but I keep the constants for understandability
+                            convolution_terms(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2)) <= signed(kernel_buffer_operation(0)(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2))); -- For now, only one concurrent kernel
+                        else
+                            convolution_terms(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2)) <= to_signed(0, CONV1_PRECISION);
+                        end if;
+                    end loop;
+                end loop;
+            end if;
+
+            -- Stage 2: First adder tree instance
+            if convolution_func_stage_valid(0) = '1' then
+                adder_tree_first(0) <= resize(convolution_terms(0) + convolution_terms(1), CONV1_ACCUM_WIDTH_C);
+                adder_tree_first(1) <= resize(convolution_terms(2) + convolution_terms(3), CONV1_ACCUM_WIDTH_C);
+                adder_tree_first(2) <= resize(convolution_terms(4) + convolution_terms(5), CONV1_ACCUM_WIDTH_C);
+                adder_tree_first(3) <= resize(convolution_terms(6) + convolution_terms(7), CONV1_ACCUM_WIDTH_C);
+                adder_tree_first(4) <= resize(convolution_terms(8), CONV1_ACCUM_WIDTH_C);
+            end if;
+
+            -- Stage 3: Second adder tree instance
+            if convolution_func_stage_valid(1) = '1' then
+                adder_tree_second(0) <= adder_tree_first(0) + adder_tree_first(1);
+                adder_tree_second(1) <= adder_tree_first(2) + adder_tree_first(3);
+                adder_tree_second(2) <= adder_tree_first(4);
+            end if;
+
+            -- Stage 4: Last adder tree instance
+            if convolution_func_stage_valid(2) = '1' then
+                result <= adder_tree_second(0) + adder_tree_second(1) + adder_tree_second(2);
+            end if;
+
         end if;
     end process;
 
