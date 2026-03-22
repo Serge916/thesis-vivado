@@ -121,7 +121,7 @@ architecture rtl of Conv1_Layer is
 
     -- Signals for Line Fetch
     -- Index 0 is top, index 2 is bottom
-    subtype single_line_buffer_t is std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
+    subtype single_line_buffer_t is std_logic_vector(CONV1_FRAME_WIDTH + 1 downto 0); -- Width + 2 bits for padding
     type channel_line_buffer_t is array (0 to CONV1_KERNEL_SIZE - 1) of single_line_buffer_t;
     type line_buffer_t is array (0 to CONV1_CHAN_INPUT - 1) of channel_line_buffer_t;
     signal line_buffer : line_buffer_t := (others => (others => (others => '0')));
@@ -134,7 +134,7 @@ architecture rtl of Conv1_Layer is
     signal convolution_init : std_logic := '0';
     signal convolution_rdy : std_logic := '0';
     signal convolution_active : std_logic := '0';
-    type output_line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of single_line_buffer_t;
+    type output_line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
     signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
@@ -164,32 +164,13 @@ architecture rtl of Conv1_Layer is
     function convolution_func(lines : channel_line_buffer_t; kernel : single_kernel_buffer_t; central_column : natural) return accumulate_t is
         variable accumulated : accumulate_t := (others => '0');
     begin
-        case central_column is
-            when 0 =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in 0 to (CONV1_KERNEL_SIZE/2) loop
-                        if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
-                        end if;
-                    end loop;
-                end loop;
-            when (CONV1_FRAME_WIDTH - 1) =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in - (CONV1_KERNEL_SIZE/2) to 0 loop
-                        if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE));
-                        end if;
-                    end loop;
-                end loop;
-            when others =>
-                for r in 0 to CONV1_KERNEL_SIZE - 1 loop
-                    for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
-                        if lines(r)(central_column + c) = '1' then
-                            accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
-                        end if;
-                    end loop;
-                end loop;
-        end case;
+        for r in 0 to CONV1_KERNEL_SIZE - 1 loop
+            for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
+                if lines(r)(central_column + 1 + c) = '1' then -- +1 to account for padding
+                    accumulated := accumulated + signed(kernel((c + (CONV1_KERNEL_SIZE/2)) + r * CONV1_KERNEL_SIZE)); -- The kernel is from 0 to 8, that's why I add the limit
+                end if;
+            end loop;
+        end loop;
         return accumulated;
     end function;
 
@@ -231,7 +212,9 @@ begin
                                 line_buffer(chan)(2) <= line_buffer(chan)(1);
                                 line_buffer(chan)(1) <= line_buffer(chan)(0);
                                 -- Insert the incoming line
-                                line_buffer(chan)(0) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
+                                line_buffer(chan)(0)(0) <= '0';
+                                line_buffer(chan)(0)(CONV1_FRAME_WIDTH downto 1) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
+                                line_buffer(chan)(0)(CONV1_FRAME_WIDTH + 1) <= '0';
                             end loop;
 
                             if remaining_lines = 1 then
