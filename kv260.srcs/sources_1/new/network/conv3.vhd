@@ -157,7 +157,6 @@ architecture rtl of Conv3_Layer is
     type accumulate_reg_t is array (0 to CONV3_CONCURRENT_KERNELS - 1) of accumulate_t;
     signal value : accumulate_reg_t := (others => (others => '0'));
     signal partial_value : accumulate_reg_t := (others => (others => '0'));
-    signal partial_value_valid : std_logic := '0';
     signal advance_column : std_logic := '0';
     type operation_fsm_t is (
         FIRST_ACCUMULATE,

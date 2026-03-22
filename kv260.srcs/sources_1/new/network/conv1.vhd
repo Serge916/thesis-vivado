@@ -138,6 +138,18 @@ architecture rtl of Conv1_Layer is
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
     signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
+    signal remaining_operations : natural range 0 to CONV1_CHAN_INPUT;
+    type accumulate_reg_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of accumulate_t;
+    signal value : accumulate_reg_t := (others => (others => '0'));
+    signal partial_value : accumulate_reg_t := (others => (others => '0'));
+    signal advance_column : std_logic := '0';
+    type operation_fsm_t is (
+        FIRST_ACCUMULATE,
+        ACCUMULATE,
+        LAST_ACCUMULATE,
+        WRITE_BACK
+    );
+    signal operation_fsm : operation_fsm_t;
 
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
@@ -280,8 +292,7 @@ begin
 
     end process;
 
-    convolution : process (aclk, aresetn)
-        variable value : accumulate_t := (others => '0');
+    convolution : process (aclk)
     begin
         if rising_edge(aclk) then
             convolution_rdy <= '0';
@@ -289,28 +300,67 @@ begin
             if convolution_init = '1' then
                 convolution_active <= '1';
                 convolution_col_idx <= 0;
+                remaining_operations <= CONV1_CHAN_INPUT - 1;
+                value <= (others => to_signed(0, CONV1_ACCUM_WIDTH_C));
+                operation_fsm <= FIRST_ACCUMULATE;
                 -- output_line_buffer <= (others => '0');
 
             elsif convolution_active = '1' then
-                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                    for c in 0 to COLUMS_PER_CYCLE - 1 loop
-                        value := (others => '0');
-                        for i in 0 to CONV1_CHAN_INPUT - 1 loop
-                            value := convolution_func(line_buffer(i), kernel_buffer(i)(k), c + convolution_col_idx) + value;
+
+                case operation_fsm is
+                    when FIRST_ACCUMULATE =>
+                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                            partial_value(k) <= convolution_func(line_buffer(remaining_operations), kernel_buffer(remaining_operations)(k), convolution_col_idx);
                         end loop;
 
-                        output_line_buffer(k)(c + convolution_col_idx) <= '0';
-                        if value > 255 then
-                            output_line_buffer(k)(c + convolution_col_idx) <= '1';
+                        if remaining_operations > 0 then
+                            remaining_operations <= remaining_operations - 1;
+                            operation_fsm <= ACCUMULATE;
+                        else
+                            operation_fsm <= LAST_ACCUMULATE;
                         end if;
-                    end loop;
-                end loop;
-                if (convolution_col_idx + COLUMS_PER_CYCLE) < CONV1_FRAME_WIDTH then
-                    convolution_col_idx <= convolution_col_idx + COLUMS_PER_CYCLE;
-                else
-                    convolution_rdy <= '1';
-                    convolution_active <= '0';
-                end if;
+
+                    when ACCUMULATE =>
+                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                            -- Calculate one input channel at a time
+                            partial_value(k) <= convolution_func(line_buffer(remaining_operations), kernel_buffer(remaining_operations)(k), convolution_col_idx);
+                            value(k) <= partial_value(k) + value(k);
+                        end loop;
+
+                        if remaining_operations > 0 then
+                            remaining_operations <= remaining_operations - 1;
+                        else
+                            operation_fsm <= LAST_ACCUMULATE;
+                        end if;
+
+                    when LAST_ACCUMULATE =>
+                        -- Add the last partial result
+                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                            value(k) <= partial_value(k) + value(k);
+                        end loop;
+                        operation_fsm <= WRITE_BACK;
+
+                    when WRITE_BACK =>
+                        -- Assign the output pixel its binary value
+                        for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                            if value(k) > 255 then
+                                output_line_buffer(k)(convolution_col_idx) <= '1';
+                            else
+                                output_line_buffer(k)(convolution_col_idx) <= '0';
+                            end if;
+                            value(k) <= to_signed(0, CONV1_ACCUM_WIDTH_C);
+                        end loop;
+                        -- Move on to the next column or finish
+                        if convolution_col_idx < CONV1_FRAME_WIDTH - 1 then
+                            convolution_col_idx <= convolution_col_idx + 1;
+                            remaining_operations <= CONV1_CHAN_INPUT - 1;
+                        else
+                            convolution_rdy <= '1';
+                            convolution_active <= '0';
+                        end if;
+                        operation_fsm <= FIRST_ACCUMULATE;
+                end case;
+
             end if;
         end if;
     end process;

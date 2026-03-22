@@ -126,7 +126,7 @@ begin
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV1_TDATA_WIDTH, -- 128 per line * 2 input channels
             M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH, -- 128 per line * 2 input channels
-            COLUMS_PER_CYCLE => 4
+            COLUMS_PER_CYCLE => 1
         )
         port map(
             aclk => aclk,
@@ -173,7 +173,7 @@ begin
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV2_TDATA_WIDTH, -- 128 per line * 2 input channels
             M_AXIS_TDATA_WIDTH_G => MAXPOOL2_TDATA_WIDTH, -- 128 per line * 2 input channels
-            COLUMS_PER_CYCLE => 4
+            COLUMS_PER_CYCLE => 2
         )
         port map(
             aclk => aclk,
@@ -219,7 +219,7 @@ begin
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV3_TDATA_WIDTH,
             M_AXIS_TDATA_WIDTH_G => MAXPOOL3_TDATA_WIDTH,
-            COLUMS_PER_CYCLE => 4
+            COLUMS_PER_CYCLE => 2
         )
         port map(
             aclk => aclk,
@@ -264,7 +264,7 @@ begin
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV4_TDATA_WIDTH,
             M_AXIS_TDATA_WIDTH_G => MAXPOOL4_TDATA_WIDTH,
-            COLUMS_PER_CYCLE => 4
+            COLUMS_PER_CYCLE => 2
         )
         port map(
             aclk => aclk,
