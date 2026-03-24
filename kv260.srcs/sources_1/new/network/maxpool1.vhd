@@ -75,13 +75,19 @@ architecture rtl of Maxpool1_Layer is
 begin
     m_axis_tvalid <= axi_out_valid;
     s_axis_tready <= axi_in_ready;
-    axi_in_ready <= not out_fifo_full;
 
     m_axis_tkeep <= (others => '1');
     d_output <= (others => '0');
 
     axi_master : process (out_rd_ptr, out_count, out_fifo_empty, out_fifo)
     begin
+        -- axi in acts like a watermark signal. Receive only when there is at least one slot
+        if out_count < (OUT_FIFO_DEPTH_C - 1) then
+            axi_in_ready <= '1';
+        else
+            axi_in_ready <= '0';
+        end if;
+
         axi_out_valid <= not out_fifo_empty;
         m_axis_tdata <= out_fifo(out_rd_ptr).tdata;
         m_axis_tuser <= out_fifo(out_rd_ptr).tuser;
