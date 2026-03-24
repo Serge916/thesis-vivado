@@ -14,7 +14,7 @@ package weights_pkg is
     -- Convolution 1 
     --------------------------------------------------------------------------------
     constant CONV1_CHAN_INPUT : positive := 2;
-    constant CONV1_CHAN_OUTPUT : positive := 8; -- Output 3rd dimension
+    constant CONV1_CHAN_OUTPUT : positive := 32; -- Output 3rd dimension
     constant CONV1_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV1_CHAN_OUTPUT))));
     constant CONV1_CHAN_WIDTH_C : positive := integer(ceil(log2(real(CONV1_CHAN_INPUT))));
     constant CONV1_KERNEL_SIZE : positive := 3;
@@ -23,7 +23,7 @@ package weights_pkg is
     constant CONV1_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV1_PRECISION) * 9 * CONV1_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV1_FRAME_WIDTH : positive := 128;
     constant CONV1_FRAME_HEIGHT : positive := 128;
-    constant CONV1_CONCURRENT_KERNELS : positive := 4;
+    constant CONV1_CONCURRENT_KERNELS : positive := 16;
     constant CONV1_TDATA_WIDTH : positive := 256;
 
     type conv1_mem_t is array (0 to 32 - 1) of std_logic_vector(CONV1_CHAN_INPUT * CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
@@ -37,7 +37,7 @@ package weights_pkg is
     -- Convolution 2
     --------------------------------------------------------------------------------
     constant CONV2_CHAN_INPUT : positive := CONV1_CHAN_OUTPUT;
-    constant CONV2_CHAN_OUTPUT : positive := 16; -- Output 3rd dimension
+    constant CONV2_CHAN_OUTPUT : positive := 64; -- Output 3rd dimension
     constant CONV2_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV2_CHAN_OUTPUT * CONV2_CHAN_INPUT))));
     constant CONV2_KERNEL_SIZE : positive := 3;
     constant CONV2_PRECISION : positive := 8;
@@ -45,7 +45,7 @@ package weights_pkg is
     constant CONV2_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV2_PRECISION) * 9 * CONV2_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV2_FRAME_WIDTH : positive := MAXPOOL1_OUTPUT_WIDTH;
     constant CONV2_FRAME_HEIGHT : positive := MAXPOOL1_OUTPUT_HEIGHT;
-    constant CONV2_CONCURRENT_KERNELS : positive := 8;
+    constant CONV2_CONCURRENT_KERNELS : positive := 32;
     constant CONV2_TDATA_WIDTH : positive := MAXPOOL1_OUTPUT_WIDTH;
     constant CONV2_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT))));
 
@@ -65,7 +65,7 @@ package weights_pkg is
     -- Convolution 3
     --------------------------------------------------------------------------------
     constant CONV3_CHAN_INPUT : positive := CONV2_CHAN_OUTPUT;
-    constant CONV3_CHAN_OUTPUT : positive := 32; -- Output 3rd dimension
+    constant CONV3_CHAN_OUTPUT : positive := 128; -- Output 3rd dimension
     constant CONV3_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV3_CHAN_OUTPUT * CONV3_CHAN_INPUT))));
     constant CONV3_KERNEL_SIZE : positive := 3;
     constant CONV3_PRECISION : positive := 8;
@@ -73,11 +73,11 @@ package weights_pkg is
     constant CONV3_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV3_PRECISION) * 9 * CONV3_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV3_FRAME_WIDTH : positive := MAXPOOL2_OUTPUT_WIDTH;
     constant CONV3_FRAME_HEIGHT : positive := MAXPOOL2_OUTPUT_HEIGHT;
-    constant CONV3_CONCURRENT_KERNELS : positive := 16;
+    constant CONV3_CONCURRENT_KERNELS : positive := 32;
     constant CONV3_TDATA_WIDTH : positive := MAXPOOL2_OUTPUT_WIDTH;
     constant CONV3_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV3_KERNEL_SIZE * CONV3_CHAN_INPUT))));
 
-    type conv3_full_t is array (0 to 255) of std_logic_vector(2303 downto 0);
+    type conv3_full_t is array (0 to 127) of std_logic_vector(4607 downto 0);
     type conv3_mem_t is array (0 to CONV3_CHAN_OUTPUT * CONV3_CHAN_INPUT - 1) of std_logic_vector(CONV3_PRECISION * CONV3_KERNEL_SIZE ** 2 - 1 downto 0);
     function to_conv3_mem(w : conv3_full_t) return conv3_mem_t;
     --------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ package weights_pkg is
     -- Convolution 4
     --------------------------------------------------------------------------------
     constant CONV4_CHAN_INPUT : positive := CONV3_CHAN_OUTPUT;
-    constant CONV4_CHAN_OUTPUT : positive := 64; -- Output 3rd dimension
+    constant CONV4_CHAN_OUTPUT : positive := 256; -- Output 3rd dimension
     constant CONV4_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV4_CHAN_OUTPUT * CONV4_CHAN_INPUT))));
     constant CONV4_KERNEL_SIZE : positive := 3;
     constant CONV4_PRECISION : positive := 8;
@@ -98,11 +98,11 @@ package weights_pkg is
     constant CONV4_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV4_PRECISION) * 9 * CONV4_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV4_FRAME_WIDTH : positive := MAXPOOL3_OUTPUT_WIDTH;
     constant CONV4_FRAME_HEIGHT : positive := MAXPOOL3_OUTPUT_HEIGHT;
-    constant CONV4_CONCURRENT_KERNELS : positive := 16;
+    constant CONV4_CONCURRENT_KERNELS : positive := 64;
     constant CONV4_TDATA_WIDTH : positive := MAXPOOL3_OUTPUT_WIDTH;
     constant CONV4_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV4_KERNEL_SIZE * CONV4_CHAN_INPUT))));
 
-    type conv4_full_t is array (0 to 1023) of std_logic_vector(2303 downto 0);
+    type conv4_full_t is array (0 to 255) of std_logic_vector(9215 downto 0);
     type conv4_mem_t is array (0 to CONV4_CHAN_OUTPUT * CONV4_CHAN_INPUT - 1) of std_logic_vector(CONV4_PRECISION * CONV4_KERNEL_SIZE ** 2 - 1 downto 0);
     function to_conv4_mem(w : conv4_full_t) return conv4_mem_t;
     --------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ package weights_pkg is
     -- Convolution 5
     --------------------------------------------------------------------------------
     constant CONV5_CHAN_INPUT : positive := CONV4_CHAN_OUTPUT;
-    constant CONV5_CHAN_OUTPUT : positive := 128; -- Output 3rd dimension
+    constant CONV5_CHAN_OUTPUT : positive := 256; -- Output 3rd dimension
     constant CONV5_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV5_CHAN_OUTPUT * CONV5_CHAN_INPUT))));
     constant CONV5_KERNEL_SIZE : positive := 3;
     constant CONV5_PRECISION : positive := 8;
@@ -127,7 +127,7 @@ package weights_pkg is
     constant CONV5_TDATA_WIDTH : positive := MAXPOOL4_OUTPUT_WIDTH;
     constant CONV5_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV5_KERNEL_SIZE * CONV5_CHAN_INPUT))));
 
-    type conv5_full_t is array (0 to 2047) of std_logic_vector(2303 downto 0);
+    type conv5_full_t is array (0 to 255) of std_logic_vector(18431 downto 0);
     type conv5_mem_t is array (0 to CONV5_CHAN_OUTPUT * CONV5_CHAN_INPUT - 1) of std_logic_vector(CONV5_PRECISION * CONV5_KERNEL_SIZE ** 2 - 1 downto 0);
     function to_conv5_mem(w : conv5_full_t) return conv5_mem_t;
 end package;
