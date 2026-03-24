@@ -45,7 +45,7 @@ package weights_pkg is
     constant CONV2_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV2_PRECISION) * 9 * CONV2_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV2_FRAME_WIDTH : positive := MAXPOOL1_OUTPUT_WIDTH;
     constant CONV2_FRAME_HEIGHT : positive := MAXPOOL1_OUTPUT_HEIGHT;
-    constant CONV2_CONCURRENT_KERNELS : positive := 4;
+    constant CONV2_CONCURRENT_KERNELS : positive := 8;
     constant CONV2_TDATA_WIDTH : positive := MAXPOOL1_OUTPUT_WIDTH;
     constant CONV2_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT))));
 
@@ -73,7 +73,7 @@ package weights_pkg is
     constant CONV3_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV3_PRECISION) * 9 * CONV3_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV3_FRAME_WIDTH : positive := MAXPOOL2_OUTPUT_WIDTH;
     constant CONV3_FRAME_HEIGHT : positive := MAXPOOL2_OUTPUT_HEIGHT;
-    constant CONV3_CONCURRENT_KERNELS : positive := 2;
+    constant CONV3_CONCURRENT_KERNELS : positive := 16;
     constant CONV3_TDATA_WIDTH : positive := MAXPOOL2_OUTPUT_WIDTH;
     constant CONV3_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV3_KERNEL_SIZE * CONV3_CHAN_INPUT))));
 
@@ -98,7 +98,7 @@ package weights_pkg is
     constant CONV4_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV4_PRECISION) * 9 * CONV4_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV4_FRAME_WIDTH : positive := MAXPOOL3_OUTPUT_WIDTH;
     constant CONV4_FRAME_HEIGHT : positive := MAXPOOL3_OUTPUT_HEIGHT;
-    constant CONV4_CONCURRENT_KERNELS : positive := 2;
+    constant CONV4_CONCURRENT_KERNELS : positive := 16;
     constant CONV4_TDATA_WIDTH : positive := MAXPOOL3_OUTPUT_WIDTH;
     constant CONV4_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV4_KERNEL_SIZE * CONV4_CHAN_INPUT))));
 
@@ -123,7 +123,7 @@ package weights_pkg is
     constant CONV5_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV5_PRECISION) * 9 * CONV5_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV5_FRAME_WIDTH : positive := MAXPOOL4_OUTPUT_WIDTH;
     constant CONV5_FRAME_HEIGHT : positive := MAXPOOL4_OUTPUT_HEIGHT;
-    constant CONV5_CONCURRENT_KERNELS : positive := 1;
+    constant CONV5_CONCURRENT_KERNELS : positive := 16;
     constant CONV5_TDATA_WIDTH : positive := MAXPOOL4_OUTPUT_WIDTH;
     constant CONV5_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV5_KERNEL_SIZE * CONV5_CHAN_INPUT))));
 

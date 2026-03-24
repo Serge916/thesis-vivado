@@ -22,9 +22,9 @@ end entity Conv1_ROM;
 
 architecture rtl of Conv1_ROM is
 
-    signal rom : conv1_mem_t := CONV1_WEIGHTS;
-    -- constant WEIGHT_INIT : std_logic_vector(16 * 9 - 1 downto 0) := (x"7F7F7F7F7F7F7F7F7F" & x"7F7F7F7F7F7F7F7F7F");
-    -- signal rom : conv1_mem_t := (others => WEIGHT_INIT);
+    -- signal rom : conv1_mem_t := CONV1_WEIGHTS;
+    constant WEIGHT_INIT : std_logic_vector(16 * 9 - 1 downto 0) := (x"7F7F7F7F7F7F7F7F7F" & x"7F7F7F7F7F7F7F7F7F");
+    signal rom : conv1_mem_t := (others => WEIGHT_INIT);
 
     attribute ram_style : string;
     attribute ram_style of rom : signal is "block";
@@ -38,7 +38,11 @@ begin
     read : process (clk)
     begin
         if rising_edge(clk) then
-            dout_q <= rom(to_integer(unsigned(addr)));
+            if en = '1' then
+                dout_q <= rom(to_integer(unsigned(addr)));
+            else
+                dout_q <= (others => '0');
+            end if;
         end if;
     end process;
 
@@ -150,17 +154,22 @@ architecture rtl of Conv1_Layer is
     signal line_buffer_operation : channel_line_buffer_t;
     signal kernel_buffer_operation : channel_kernel_buffer_t;
     signal column_operation : integer range 0 to CONV1_FRAME_WIDTH - 1;
-    type convolution_terms_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of signed(CONV1_PRECISION - 1 downto 0);
-    signal convolution_terms : convolution_terms_t := (others => (to_signed(0, CONV1_PRECISION)));
-    type adder_tree_first_t is array (0 to 4) of accumulate_t;
+    type convolution_terms_channel_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of signed(CONV1_PRECISION - 1 downto 0);
+    type convolution_terms_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of convolution_terms_channel_t;
+    signal convolution_terms : convolution_terms_t := (others => (others => (to_signed(0, CONV1_PRECISION))));
+    type adder_tree_first_channel_t is array (0 to 4) of accumulate_t;
+    type adder_tree_first_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of adder_tree_first_channel_t;
     signal adder_tree_first : adder_tree_first_t;
-    type adder_tree_second_t is array (0 to 2) of accumulate_t;
+    type adder_tree_second_channel_t is array (0 to 2) of accumulate_t;
+    type adder_tree_second_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of adder_tree_second_channel_t;
     signal adder_tree_second : adder_tree_second_t;
-    signal result : accumulate_t := (others => '0');
-    signal convolution_func_rdy : std_logic := '0';
-    signal convolution_func_init : std_logic := '0';
-    signal convolution_func_wait : std_logic := '0';
-    signal convolution_func_stage_valid : std_logic_vector(0 to 2) := (others => '0');
+    signal result : accumulate_reg_t := (others => (others => '0'));
+    signal convolution_engine_rdy : std_logic := '0';
+    signal convolution_engine_init : std_logic := '0';
+    signal convolution_engine_wait : std_logic := '0';
+    signal convolution_engine_stage_valid : std_logic_vector(0 to 3) := (others => '0');
+    type window_mask_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of std_logic;
+    signal window_mask : window_mask_t := (others => '0');
     -- Signals for AXI_S
     signal axi_in_ready : std_logic := '0';
     signal axi_out_valid : std_logic := '0';
@@ -276,7 +285,7 @@ begin
     begin
         if rising_edge(aclk) then
             convolution_rdy <= '0';
-            convolution_func_init <= '0';
+            convolution_engine_init <= '0';
 
             if convolution_init = '1' then
                 convolution_active <= '1';
@@ -284,23 +293,25 @@ begin
                 remaining_operations <= CONV1_CHAN_INPUT - 1;
                 value <= (others => to_signed(0, CONV1_ACCUM_WIDTH_C));
                 operation_fsm <= PREPARE;
-                convolution_func_wait <= '0';
+                convolution_engine_wait <= '0';
                 -- output_line_buffer <= (others => '0');
 
             elsif convolution_active = '1' then
 
                 case operation_fsm is
                     when PREPARE =>
-                        if convolution_func_wait = '0' then
+                        if convolution_engine_wait = '0' then
                             line_buffer_operation <= line_buffer(remaining_operations);
                             kernel_buffer_operation <= kernel_buffer(remaining_operations);
                             column_operation <= convolution_col_idx;
-                            convolution_func_init <= '1';
-                            convolution_func_wait <= '1';
+                            convolution_engine_init <= '1';
+                            convolution_engine_wait <= '1';
 
-                        elsif convolution_func_rdy = '1' then
-                            value(0) <= value(0) + result; -- One kernel for now, hardcoded
-                            convolution_func_wait <= '0';
+                        elsif convolution_engine_rdy = '1' then
+                            for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                                value(k) <= value(k) + result(k); -- One kernel for now, hardcoded
+                            end loop;
+                            convolution_engine_wait <= '0';
                             if remaining_operations > 0 then
                                 remaining_operations <= remaining_operations - 1;
                             else
@@ -310,7 +321,6 @@ begin
 
                     when WRITE_BACK =>
                         -- Assign the output pixel its binary value
-                        -- FOR NOW ONLY CHANNEL 0 IS NOT GARBAGE
                         for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
                             if value(k) > to_signed(255, value(k)'length) then
                                 output_line_buffer(k)(convolution_col_idx) <= '1';
@@ -338,43 +348,60 @@ begin
     begin
         if rising_edge(aclk) then
             -- Move the validity flag forward
-            convolution_func_rdy <= convolution_func_stage_valid(2);
-            convolution_func_stage_valid(2) <= convolution_func_stage_valid(1);
-            convolution_func_stage_valid(1) <= convolution_func_stage_valid(0);
-            convolution_func_stage_valid(0) <= convolution_func_init;
+            convolution_engine_rdy <= convolution_engine_stage_valid(3);
+            convolution_engine_stage_valid(3) <= convolution_engine_stage_valid(2);
+            convolution_engine_stage_valid(2) <= convolution_engine_stage_valid(1);
+            convolution_engine_stage_valid(1) <= convolution_engine_stage_valid(0);
+            convolution_engine_stage_valid(0) <= convolution_engine_init;
 
-            -- Stage 1: Get the valid terms
-            if convolution_func_init = '1' then
+            -- Stage 1: Get the window mask
+            if convolution_engine_init = '1' then
                 for r in 0 to CONV1_KERNEL_SIZE - 1 loop
                     for c in - (CONV1_KERNEL_SIZE/2) to (CONV1_KERNEL_SIZE/2) loop
-                        if line_buffer_operation(r)(column_operation + 1 + c) = '1' then -- +1 to account for padding, I could simplify the operation but I keep the constants for understandability
-                            convolution_terms(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2)) <= signed(kernel_buffer_operation(0)(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2))); -- For now, only one concurrent kernel
+                        window_mask(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2))
+                        <= line_buffer_operation(r)(column_operation + 1 + c);
+                    end loop;
+                end loop;
+            end if;
+
+            -- Stage 2: Get the valid terms
+            if convolution_engine_stage_valid(0) = '1' then
+                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                    for t in 0 to CONV1_KERNEL_SIZE ** 2 - 1 loop
+                        if window_mask(t) = '1' then
+                            convolution_terms(k)(t) <= signed(kernel_buffer_operation(k)(t));
                         else
-                            convolution_terms(CONV1_KERNEL_SIZE * r + c + (CONV1_KERNEL_SIZE/2)) <= to_signed(0, CONV1_PRECISION);
+                            convolution_terms(k)(t) <= to_signed(0, CONV1_PRECISION);
                         end if;
                     end loop;
                 end loop;
             end if;
 
-            -- Stage 2: First adder tree instance
-            if convolution_func_stage_valid(0) = '1' then
-                adder_tree_first(0) <= resize(convolution_terms(0) + convolution_terms(1), CONV1_ACCUM_WIDTH_C);
-                adder_tree_first(1) <= resize(convolution_terms(2) + convolution_terms(3), CONV1_ACCUM_WIDTH_C);
-                adder_tree_first(2) <= resize(convolution_terms(4) + convolution_terms(5), CONV1_ACCUM_WIDTH_C);
-                adder_tree_first(3) <= resize(convolution_terms(6) + convolution_terms(7), CONV1_ACCUM_WIDTH_C);
-                adder_tree_first(4) <= resize(convolution_terms(8), CONV1_ACCUM_WIDTH_C);
+            -- Stage 3: First adder tree instance
+            if convolution_engine_stage_valid(1) = '1' then
+                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                    adder_tree_first(k)(0) <= resize(convolution_terms(k)(0) + convolution_terms(k)(1), CONV1_ACCUM_WIDTH_C);
+                    adder_tree_first(k)(1) <= resize(convolution_terms(k)(2) + convolution_terms(k)(3), CONV1_ACCUM_WIDTH_C);
+                    adder_tree_first(k)(2) <= resize(convolution_terms(k)(4) + convolution_terms(k)(5), CONV1_ACCUM_WIDTH_C);
+                    adder_tree_first(k)(3) <= resize(convolution_terms(k)(6) + convolution_terms(k)(7), CONV1_ACCUM_WIDTH_C);
+                    adder_tree_first(k)(4) <= resize(convolution_terms(k)(8), CONV1_ACCUM_WIDTH_C);
+                end loop;
             end if;
 
-            -- Stage 3: Second adder tree instance
-            if convolution_func_stage_valid(1) = '1' then
-                adder_tree_second(0) <= adder_tree_first(0) + adder_tree_first(1);
-                adder_tree_second(1) <= adder_tree_first(2) + adder_tree_first(3);
-                adder_tree_second(2) <= adder_tree_first(4);
+            -- Stage 4: Second adder tree instance
+            if convolution_engine_stage_valid(2) = '1' then
+                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                    adder_tree_second(k)(0) <= adder_tree_first(k)(0) + adder_tree_first(k)(1);
+                    adder_tree_second(k)(1) <= adder_tree_first(k)(2) + adder_tree_first(k)(3);
+                    adder_tree_second(k)(2) <= adder_tree_first(k)(4);
+                end loop;
             end if;
 
-            -- Stage 4: Last adder tree instance
-            if convolution_func_stage_valid(2) = '1' then
-                result <= adder_tree_second(0) + adder_tree_second(1) + adder_tree_second(2);
+            -- Stage 5: Last adder tree instance
+            if convolution_engine_stage_valid(3) = '1' then
+                for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
+                    result(k) <= adder_tree_second(k)(0) + adder_tree_second(k)(1) + adder_tree_second(k)(2);
+                end loop;
             end if;
 
         end if;

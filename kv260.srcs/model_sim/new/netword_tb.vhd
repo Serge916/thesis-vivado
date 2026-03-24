@@ -33,7 +33,7 @@ architecture sim of network_tb is
 
     signal d_output : std_logic_vector(CONV1_ACCUM_WIDTH_C - 1 downto 0);
 
-    constant CLK_PERIOD : time := 10 ns;
+    constant CLK_PERIOD : time := 8 ns; -- 125 MHz
 
 begin
     --------------------------------------------------------------------
@@ -74,8 +74,8 @@ begin
     -- Stimulus
     --------------------------------------------------------------------
     stim_proc : process
-        variable tx_val : unsigned(S_AXIS_TDATA_WIDTH_G - 1 downto 0);
-        constant NUM_WORDS_C : natural := 130;
+        variable tx_val : unsigned(S_AXIS_TDATA_WIDTH_G/2 - 1 downto 0); -- /2 to include both channels in one word (256 bits total)
+        constant NUM_WORDS_C : natural := 130; -- 128 rows + 2 of padding
     begin
         -- Default inputs
         s_axis_tvalid <= '0';
@@ -96,7 +96,7 @@ begin
 
         for i in 0 to NUM_WORDS_C - 1 loop
             s_axis_tvalid <= '1';
-            s_axis_tdata <= std_logic_vector(tx_val);
+            s_axis_tdata <= std_logic_vector(tx_val & tx_val);
             s_axis_tkeep <= (others => '1');
             s_axis_tuser <= (others => '0');
 
@@ -111,7 +111,7 @@ begin
                 wait until rising_edge(aclk);
 
                 if s_axis_tvalid = '1' then
-                    assert s_axis_tdata = std_logic_vector(tx_val)
+                    assert s_axis_tdata = std_logic_vector(tx_val & tx_val)
                     report "AXIS source changed tdata before handshake"
                         severity error;
                 end if;
