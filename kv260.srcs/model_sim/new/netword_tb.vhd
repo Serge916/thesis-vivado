@@ -136,7 +136,7 @@ begin
         s_axis_tuser <= (others => '0');
         s_axis_tlast <= '0';
 
-        wait until m_axis_tlast /= '0' for 1ms;
+        wait until m_axis_tlast /= '0' for 10ms;
         -- Let DUT run for a while
         wait for 3us;
 

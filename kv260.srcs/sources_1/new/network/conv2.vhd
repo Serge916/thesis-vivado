@@ -67,8 +67,7 @@ use xil_defaultlib.weights_pkg.all;
 entity Conv2_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        COLUMS_PER_CYCLE : positive := 1
+        M_AXIS_TDATA_WIDTH_G : positive := 64 -- 128 per line * 2 input channels
     );
     port (
         -- Clock and Reset
@@ -147,6 +146,7 @@ architecture rtl of Conv2_Layer is
     signal line_load_rdy : std_logic := '0';
     signal line_load_init : std_logic := '0';
     signal line_load_active : std_logic := '0';
+    signal remaining_lines : natural range 0 to CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT := 0;
 
     -- Signals for Convolution
     signal convolution_init : std_logic := '0';
@@ -209,10 +209,9 @@ begin
     d_output <= (others => '0');
 
     ingress_lines : process (aclk)
-        variable remaining_lines : natural range 0 to CONV2_KERNEL_SIZE * CONV2_CHAN_INPUT := 0;
         variable channel_id : natural range 0 to CONV2_CHAN_INPUT - 1 := 0;
         -- variable row_id : natural range 0 to CONV2_FRAME_HEIGHT - 1 := 0;
-        variable clean_up_lines : natural range 0 to CONV2_CHAN_INPUT - 1;
+        variable clean_up_lines : natural range 0 to CONV2_KERNEL_SIZE - 1;
     begin
         if rising_edge(aclk) then
             -- By default, do not accept data in
@@ -223,7 +222,7 @@ begin
             clean_up_rdy <= '0';
 
             if line_load_init = '1' then
-                remaining_lines := advance_lines * CONV2_CHAN_INPUT; -- Per row, I need INPUT amount of channels
+                remaining_lines <= advance_lines * CONV2_CHAN_INPUT; -- Per row, I need INPUT amount of channels
                 line_load_active <= '1';
 
             elsif line_load_active = '1' then
@@ -236,7 +235,7 @@ begin
                             -- Insert an empty line
                             line_buffer(chan)(0) <= (others => '0');
                         end loop;
-                        remaining_lines := 0;
+                        remaining_lines <= 0;
                     else
                         -- AXI Stream in
                         -- If lines can be accepted, signal it
@@ -249,10 +248,7 @@ begin
                             line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
                             -- Insert the incoming line
                             line_buffer(channel_id)(0) <= '0' & s_axis_tdata & '0';
-                            if remaining_lines = 1 then
-                                axi_in_ready <= '0';
-                            end if;
-                            remaining_lines := remaining_lines - 1;
+                            remaining_lines <= remaining_lines - 1;
                         end if;
                     end if;
                 else

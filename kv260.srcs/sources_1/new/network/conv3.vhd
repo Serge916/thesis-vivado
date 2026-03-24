@@ -67,8 +67,7 @@ use xil_defaultlib.weights_pkg.all;
 entity Conv3_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        COLUMS_PER_CYCLE : positive := 1
+        M_AXIS_TDATA_WIDTH_G : positive := 64 -- 128 per line * 2 input channels
     );
     port (
         -- Clock and Reset

@@ -125,8 +125,7 @@ begin
     conv1 : entity xil_defaultlib.Conv1_Layer
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV1_TDATA_WIDTH, -- 128 per line * 2 input channels
-            M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH, -- 128 per line * 2 input channels
-            COLUMS_PER_CYCLE => 1
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH -- 128 per line * 2 input channels
         )
         port map(
             aclk => aclk,
@@ -172,8 +171,7 @@ begin
     conv2 : entity xil_defaultlib.Conv2_Layer
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV2_TDATA_WIDTH, -- 128 per line * 2 input channels
-            M_AXIS_TDATA_WIDTH_G => MAXPOOL2_TDATA_WIDTH, -- 128 per line * 2 input channels
-            COLUMS_PER_CYCLE => 2
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL2_TDATA_WIDTH -- 128 per line * 2 input channels
         )
         port map(
             aclk => aclk,
@@ -218,8 +216,7 @@ begin
     conv3 : entity xil_defaultlib.Conv3_Layer
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV3_TDATA_WIDTH,
-            M_AXIS_TDATA_WIDTH_G => MAXPOOL3_TDATA_WIDTH,
-            COLUMS_PER_CYCLE => 2
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL3_TDATA_WIDTH
         )
         port map(
             aclk => aclk,
@@ -263,8 +260,7 @@ begin
     conv4 : entity xil_defaultlib.Conv4_Layer
         generic map(
             S_AXIS_TDATA_WIDTH_G => CONV4_TDATA_WIDTH,
-            M_AXIS_TDATA_WIDTH_G => MAXPOOL4_TDATA_WIDTH,
-            COLUMS_PER_CYCLE => 2
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL4_TDATA_WIDTH
         )
         port map(
             aclk => aclk,
