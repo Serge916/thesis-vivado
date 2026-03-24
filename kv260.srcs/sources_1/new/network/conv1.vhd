@@ -146,13 +146,16 @@ architecture rtl of Conv1_Layer is
     type accumulate_reg_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of accumulate_t;
     signal value : accumulate_reg_t := (others => (others => '0'));
     type operation_fsm_t is (
-        PREPARE,
+        ISSUE,
         WRITE_BACK
     );
     signal operation_fsm : operation_fsm_t;
+    signal pipeline_issue_idx : natural range 0 to CONV1_CHAN_INPUT := 0;
+    signal pipeline_retire_cnt : natural range 0 to CONV1_CHAN_INPUT := 0;
     -- Signals for convolution pipeline
     signal line_buffer_operation : channel_line_buffer_t;
     signal kernel_buffer_operation : channel_kernel_buffer_t;
+    signal kernel_buffer_operation_reg : channel_kernel_buffer_t;
     signal column_operation : integer range 0 to CONV1_FRAME_WIDTH - 1;
     type convolution_terms_channel_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of signed(CONV1_PRECISION - 1 downto 0);
     type convolution_terms_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of convolution_terms_channel_t;
@@ -166,7 +169,6 @@ architecture rtl of Conv1_Layer is
     signal result : accumulate_reg_t := (others => (others => '0'));
     signal convolution_engine_rdy : std_logic := '0';
     signal convolution_engine_init : std_logic := '0';
-    signal convolution_engine_wait : std_logic := '0';
     signal convolution_engine_stage_valid : std_logic_vector(0 to 3) := (others => '0');
     type window_mask_t is array (0 to CONV1_KERNEL_SIZE ** 2 - 1) of std_logic;
     signal window_mask : window_mask_t := (others => '0');
@@ -290,33 +292,33 @@ begin
             if convolution_init = '1' then
                 convolution_active <= '1';
                 convolution_col_idx <= 0;
-                remaining_operations <= CONV1_CHAN_INPUT - 1;
+                pipeline_issue_idx <= CONV1_CHAN_INPUT;
+                pipeline_retire_cnt <= CONV1_CHAN_INPUT;
                 value <= (others => to_signed(0, CONV1_ACCUM_WIDTH_C));
-                operation_fsm <= PREPARE;
-                convolution_engine_wait <= '0';
-                -- output_line_buffer <= (others => '0');
+                operation_fsm <= ISSUE;
 
             elsif convolution_active = '1' then
 
                 case operation_fsm is
-                    when PREPARE =>
-                        if convolution_engine_wait = '0' then
-                            line_buffer_operation <= line_buffer(remaining_operations);
-                            kernel_buffer_operation <= kernel_buffer(remaining_operations);
+                    when ISSUE =>
+                        if pipeline_issue_idx > 0 then
+                            line_buffer_operation <= line_buffer(pipeline_issue_idx - 1); -- Substract by one to simplify the control logic
+                            kernel_buffer_operation <= kernel_buffer(pipeline_issue_idx - 1);
                             column_operation <= convolution_col_idx;
                             convolution_engine_init <= '1';
-                            convolution_engine_wait <= '1';
+                            pipeline_issue_idx <= pipeline_issue_idx - 1;
+                        end if;
 
-                        elsif convolution_engine_rdy = '1' then
+                        if convolution_engine_rdy = '1' then
                             for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                                value(k) <= value(k) + result(k); -- One kernel for now, hardcoded
+                                value(k) <= value(k) + result(k);
                             end loop;
-                            convolution_engine_wait <= '0';
-                            if remaining_operations > 0 then
-                                remaining_operations <= remaining_operations - 1;
-                            else
+
+                            if pipeline_retire_cnt = 1 then
                                 operation_fsm <= WRITE_BACK;
                             end if;
+
+                            pipeline_retire_cnt <= pipeline_retire_cnt - 1;
                         end if;
 
                     when WRITE_BACK =>
@@ -332,8 +334,9 @@ begin
                         -- Move on to the next column or finish
                         if convolution_col_idx < CONV1_FRAME_WIDTH - 1 then
                             convolution_col_idx <= convolution_col_idx + 1;
-                            remaining_operations <= CONV1_CHAN_INPUT - 1;
-                            operation_fsm <= PREPARE;
+                            pipeline_issue_idx <= CONV1_CHAN_INPUT;
+                            pipeline_retire_cnt <= CONV1_CHAN_INPUT;
+                            operation_fsm <= ISSUE;
                         else
                             convolution_rdy <= '1';
                             convolution_active <= '0';
@@ -362,6 +365,7 @@ begin
                         <= line_buffer_operation(r)(column_operation + 1 + c);
                     end loop;
                 end loop;
+                kernel_buffer_operation_reg <= kernel_buffer_operation;
             end if;
 
             -- Stage 2: Get the valid terms
@@ -369,7 +373,7 @@ begin
                 for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
                     for t in 0 to CONV1_KERNEL_SIZE ** 2 - 1 loop
                         if window_mask(t) = '1' then
-                            convolution_terms(k)(t) <= signed(kernel_buffer_operation(k)(t));
+                            convolution_terms(k)(t) <= signed(kernel_buffer_operation_reg(k)(t));
                         else
                             convolution_terms(k)(t) <= to_signed(0, CONV1_PRECISION);
                         end if;
