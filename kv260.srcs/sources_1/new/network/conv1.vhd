@@ -139,7 +139,7 @@ architecture rtl of Conv1_Layer is
     signal convolution_active : std_logic := '0';
     type output_line_buffer_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of std_logic_vector(CONV1_FRAME_WIDTH - 1 downto 0);
     signal output_line_buffer : output_line_buffer_t;
-    subtype accumulate_t is signed(CONV1_ACCUM_WIDTH_C - 1 downto 0);
+    subtype accumulate_t is signed(CONV1_INTERMEDIATE_WIDTH_C - 1 downto 0);
     signal convolution_col_idx : integer range 0 to CONV1_FRAME_WIDTH - 1;
     signal remaining_operations : natural range 0 to CONV1_CHAN_INPUT;
     type accumulate_reg_t is array (0 to CONV1_CONCURRENT_KERNELS - 1) of accumulate_t;
@@ -293,7 +293,7 @@ begin
                 convolution_col_idx <= 0;
                 pipeline_issue_idx <= CONV1_CHAN_INPUT;
                 pipeline_retire_cnt <= CONV1_CHAN_INPUT;
-                value <= (others => to_signed(0, CONV1_ACCUM_WIDTH_C));
+                value <= (others => to_signed(0, CONV1_INTERMEDIATE_WIDTH_C));
                 operation_fsm <= ISSUE;
 
             elsif convolution_active = '1' then
@@ -328,7 +328,7 @@ begin
                             else
                                 output_line_buffer(k)(convolution_col_idx) <= '0';
                             end if;
-                            value(k) <= to_signed(0, CONV1_ACCUM_WIDTH_C);
+                            value(k) <= to_signed(0, value(k)'length);
                         end loop;
                         -- Move on to the next column or finish
                         if convolution_col_idx < CONV1_FRAME_WIDTH - 1 then
@@ -383,11 +383,11 @@ begin
             -- Stage 3: First adder tree instance
             if convolution_engine_stage_valid(1) = '1' then
                 for k in 0 to CONV1_CONCURRENT_KERNELS - 1 loop
-                    adder_tree_first(k)(0) <= resize(convolution_terms(k)(0) + convolution_terms(k)(1), CONV1_ACCUM_WIDTH_C);
-                    adder_tree_first(k)(1) <= resize(convolution_terms(k)(2) + convolution_terms(k)(3), CONV1_ACCUM_WIDTH_C);
-                    adder_tree_first(k)(2) <= resize(convolution_terms(k)(4) + convolution_terms(k)(5), CONV1_ACCUM_WIDTH_C);
-                    adder_tree_first(k)(3) <= resize(convolution_terms(k)(6) + convolution_terms(k)(7), CONV1_ACCUM_WIDTH_C);
-                    adder_tree_first(k)(4) <= resize(convolution_terms(k)(8), CONV1_ACCUM_WIDTH_C);
+                    adder_tree_first(k)(0) <= resize(convolution_terms(k)(0) + convolution_terms(k)(1), CONV1_INTERMEDIATE_WIDTH_C);
+                    adder_tree_first(k)(1) <= resize(convolution_terms(k)(2) + convolution_terms(k)(3), CONV1_INTERMEDIATE_WIDTH_C);
+                    adder_tree_first(k)(2) <= resize(convolution_terms(k)(4) + convolution_terms(k)(5), CONV1_INTERMEDIATE_WIDTH_C);
+                    adder_tree_first(k)(3) <= resize(convolution_terms(k)(6) + convolution_terms(k)(7), CONV1_INTERMEDIATE_WIDTH_C);
+                    adder_tree_first(k)(4) <= resize(convolution_terms(k)(8), CONV1_INTERMEDIATE_WIDTH_C);
                 end loop;
             end if;
 

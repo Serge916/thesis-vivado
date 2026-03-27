@@ -107,6 +107,14 @@ architecture rtl of SpikeVision is
     signal maxpool4_conv5_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal maxpool4_conv5_tlast : std_logic;
     signal maxpool4_debug : std_logic_vector(11 downto 0);
+    -- CONV5 TO SCREENER1
+    signal conv5_screener1_tready : std_logic;
+    signal conv5_screener1_tvalid : std_logic;
+    signal conv5_screener1_tdata : std_logic_vector(SCREENER1_TDATA_WIDTH - 1 downto 0);
+    signal conv5_screener1_tkeep : std_logic_vector(SCREENER1_TDATA_WIDTH/8 - 1 downto 0);
+    signal conv5_screener1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
+    signal conv5_screener1_tlast : std_logic;
+    signal conv5_debug : std_logic_vector(11 downto 0);
 begin
     s_axis_tready <= dma_conv1_tready;
     dma_conv1_tvalid <= s_axis_tvalid;
@@ -115,12 +123,12 @@ begin
     dma_conv1_tuser <= s_axis_tuser;
     dma_conv1_tlast <= s_axis_tlast;
 
-    maxpool4_conv5_tready <= m_axis_tready;
-    m_axis_tvalid <= maxpool4_conv5_tvalid;
-    m_axis_tdata <= maxpool4_conv5_tdata;
-    m_axis_tkeep <= maxpool4_conv5_tkeep;
-    m_axis_tuser <= maxpool4_conv5_tuser;
-    m_axis_tlast <= maxpool4_conv5_tlast;
+    conv5_screener1_tready <= m_axis_tready;
+    m_axis_tvalid <= conv5_screener1_tvalid;
+    m_axis_tdata <= conv5_screener1_tdata;
+    m_axis_tkeep <= conv5_screener1_tkeep;
+    m_axis_tuser <= conv5_screener1_tuser;
+    m_axis_tlast <= conv5_screener1_tlast;
 
     conv1 : entity xil_defaultlib.Conv1_Layer
         generic map(
@@ -300,5 +308,27 @@ begin
             m_axis_tuser => maxpool4_conv5_tuser,
             m_axis_tlast => maxpool4_conv5_tlast,
             d_output => maxpool4_debug
+        );
+    conv5 : entity xil_defaultlib.Conv5_Layer
+        generic map(
+            S_AXIS_TDATA_WIDTH_G => CONV5_TDATA_WIDTH,
+            M_AXIS_TDATA_WIDTH_G => SCREENER1_TDATA_WIDTH
+        )
+        port map(
+            aclk => aclk,
+            aresetn => aresetn,
+            s_axis_tready => maxpool4_conv5_tready,
+            s_axis_tvalid => maxpool4_conv5_tvalid,
+            s_axis_tdata => maxpool4_conv5_tdata,
+            s_axis_tkeep => maxpool4_conv5_tkeep,
+            s_axis_tuser => maxpool4_conv5_tuser,
+            s_axis_tlast => maxpool4_conv5_tlast,
+            m_axis_tready => conv5_screener1_tready,
+            m_axis_tvalid => conv5_screener1_tvalid,
+            m_axis_tdata => conv5_screener1_tdata,
+            m_axis_tkeep => conv5_screener1_tkeep,
+            m_axis_tuser => conv5_screener1_tuser,
+            m_axis_tlast => conv5_screener1_tlast,
+            d_output => conv5_debug
         );
 end rtl;
