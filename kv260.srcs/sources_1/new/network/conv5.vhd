@@ -14,18 +14,21 @@ entity Conv5_ROM is
     port (
         -- Clock and Reset
         clk : in std_logic;
-
-        -- Input
-        en : in std_logic;
-        addr : in std_logic_vector(CONV5_ADDR_WIDTH_C - 1 downto 0);
-        -- Output
+        -- Port A: AXIL
+        wr_en : in std_logic;
+        wr_addr : in std_logic_vector(CONV5_ADDR_WIDTH_C - 1 downto 0);
+        din : in std_logic_vector(CONV5_KERNEL_SIZE ** 2 * CONV5_PRECISION - 1 downto 0);
+        -- Port B: Layer
+        rd_en : in std_logic;
+        rd_addr : in std_logic_vector(CONV5_ADDR_WIDTH_C - 1 downto 0);
         dout : out std_logic_vector(CONV5_KERNEL_SIZE ** 2 * CONV5_PRECISION - 1 downto 0)
     );
 end entity Conv5_ROM;
 
 architecture rtl of Conv5_ROM is
 
-    signal rom : conv5_mem_t := to_conv5_mem(CONV5_WEIGHTS);
+    signal rom : conv5_mem_t;
+    -- signal rom : conv5_mem_t := to_conv5_mem(CONV5_WEIGHTS);
     -- constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
     -- x"7F" & x"7F" & x"7F" &
     -- x"7F" & x"7F" & x"7F" &
@@ -34,7 +37,7 @@ architecture rtl of Conv5_ROM is
     -- signal rom : conv5_mem_t := (others => (WEIGHT_INIT));
 
     attribute ram_style : string;
-    attribute ram_style of rom : signal is "block";
+    attribute ram_style of rom : signal is "ultra";
 
     signal dout_q : std_logic_vector(CONV5_KERNEL_SIZE ** 2 * CONV5_PRECISION - 1 downto 0);
 
@@ -42,13 +45,13 @@ begin
 
     dout <= dout_q;
 
-    read : process (clk)
+    process (clk)
     begin
         if rising_edge(clk) then
-            if en = '1' then
-                dout_q <= rom(to_integer(unsigned(addr)));
-                -- else
-                --     dout_q <= (others => '0');
+            if wr_en = '1' then
+                rom(to_integer(unsigned(wr_addr))) <= din;
+            elsif rd_en = '1' then
+                dout_q <= rom(to_integer(unsigned(rd_addr)));
             end if;
         end if;
     end process;
@@ -121,7 +124,9 @@ use xil_defaultlib.weights_pkg.all;
 entity Conv5_Layer is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 8 -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
+        MEM_WORD_WIDTH_G : integer := 72;
+        WRITE_ADDR_WIDTH_G : integer := 16
     );
     port (
         -- Clock and Reset
@@ -143,6 +148,13 @@ entity Conv5_Layer is
         m_axis_tkeep : out std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
         m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
         m_axis_tlast : out std_logic;
+
+        -- AXI-Lite Memory Interface
+        load_mode_i : in std_logic;
+        soft_reset_i : in std_logic;
+        axil_wr_addr : in std_logic_vector(WRITE_ADDR_WIDTH_G - 1 downto 0);
+        axil_wr_data : in std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+        axil_wr_en : in std_logic;
 
         -- Debug Output
         d_output : out std_logic_vector(11 downto 0)
@@ -265,9 +277,12 @@ begin
     conv5_mem : entity xil_defaultlib.Conv5_ROM
         port map(
             clk => aclk,
-            en => conv5_en,
-            addr => conv5_addr,
-            dout => conv5_dout
+            rd_en => conv5_en,
+            rd_addr => conv5_addr,
+            dout => conv5_dout,
+            wr_en => axil_wr_en,
+            wr_addr => axil_wr_addr,
+            din => axil_wr_data
         );
     conv5_neuron_mem : entity xil_defaultlib.Conv5_Neuron_Mem
         port map(
@@ -285,9 +300,9 @@ begin
     m_axis_tkeep <= (others => '1');
     d_output <= (others => '0');
 
-    process (axi_out_tuser)
+    process (axi_out_tuser, axi_out_valid)
     begin
-        if axi_out_tuser = FINISH_CONDITION then
+        if axi_out_tuser = FINISH_CONDITION and axi_out_valid = '1' then
             m_axis_tlast <= '1';
         else
             m_axis_tlast <= '0';

@@ -10,7 +10,10 @@ entity SpikeVision is
     generic (
         S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
         M_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
-        AXIS_TUSER_WIDTH_G : positive := 15
+        AXIS_TUSER_WIDTH_G : positive := 15;
+        AXIL_ADDR_WIDTH_G : positive := 32;
+        AXIL_DATA_WIDTH_G : positive := 32;
+        MEM_WORD_WIDTH_G : positive := 72
     );
     port (
         -- Clock and Reset
@@ -31,7 +34,30 @@ entity SpikeVision is
         m_axis_tdata : out std_logic_vector(M_AXIS_TDATA_WIDTH_G - 1 downto 0);
         m_axis_tkeep : out std_logic_vector((M_AXIS_TDATA_WIDTH_G/8) - 1 downto 0);
         m_axis_tuser : out std_logic_vector(AXIS_TUSER_WIDTH_G - 1 downto 0);
-        m_axis_tlast : out std_logic
+        m_axis_tlast : out std_logic;
+
+        -- Slave AXI4-Lite Interface
+        s_axi_aclk : in std_logic;
+        s_axi_aresetn : in std_logic;
+        s_axi_awaddr : in std_logic_vector(AXIL_ADDR_WIDTH_G - 1 downto 0);
+        s_axi_awprot : in std_logic_vector(2 downto 0); -- NOT USED
+        s_axi_awvalid : in std_logic;
+        s_axi_awready : out std_logic;
+        s_axi_wdata : in std_logic_vector(AXIL_DATA_WIDTH_G - 1 downto 0); -- NOT USED
+        s_axi_wstrb : in std_logic_vector((AXIL_DATA_WIDTH_G/8) - 1 downto 0); -- NOT USED
+        s_axi_wvalid : in std_logic;
+        s_axi_wready : out std_logic;
+        s_axi_bresp : out std_logic_vector(1 downto 0);
+        s_axi_bvalid : out std_logic;
+        s_axi_bready : in std_logic;
+        s_axi_araddr : in std_logic_vector(AXIL_ADDR_WIDTH_G - 1 downto 0);
+        s_axi_arprot : in std_logic_vector(2 downto 0); -- NOT USED
+        s_axi_arvalid : in std_logic;
+        s_axi_arready : out std_logic;
+        s_axi_rdata : out std_logic_vector(AXIL_DATA_WIDTH_G - 1 downto 0);
+        s_axi_rresp : out std_logic_vector(1 downto 0);
+        s_axi_rvalid : out std_logic;
+        s_axi_rready : in std_logic
     );
 end entity SpikeVision;
 
@@ -115,6 +141,27 @@ architecture rtl of SpikeVision is
     signal conv5_screener1_tuser : std_logic_vector(AXIS_TUSER_WIDTH_C - 1 downto 0);
     signal conv5_screener1_tlast : std_logic;
     signal conv5_debug : std_logic_vector(11 downto 0);
+
+    -- REGISTER BANK
+    signal load_mode : std_logic;
+    signal soft_reset : std_logic;
+    signal enable_operation : std_logic;
+    signal conv1_wr_en : std_logic;
+    signal conv1_wr_addr : std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
+    signal conv1_wr_data : std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+    signal conv2_wr_en : std_logic;
+    signal conv2_wr_addr : std_logic_vector(CONV2_ADDR_WIDTH_C - 1 downto 0);
+    signal conv2_wr_data : std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+    signal conv3_wr_en : std_logic;
+    signal conv3_wr_addr : std_logic_vector(CONV3_ADDR_WIDTH_C - 1 downto 0);
+    signal conv3_wr_data : std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+    signal conv4_wr_en : std_logic;
+    signal conv4_wr_addr : std_logic_vector(CONV4_ADDR_WIDTH_C - 1 downto 0);
+    signal conv4_wr_data : std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+    signal conv5_wr_en : std_logic;
+    signal conv5_wr_addr : std_logic_vector(CONV5_ADDR_WIDTH_C - 1 downto 0);
+    signal conv5_wr_data : std_logic_vector(MEM_WORD_WIDTH_G - 1 downto 0);
+
 begin
     s_axis_tready <= dma_conv1_tready;
     dma_conv1_tvalid <= s_axis_tvalid;
@@ -329,6 +376,63 @@ begin
             m_axis_tkeep => conv5_screener1_tkeep,
             m_axis_tuser => conv5_screener1_tuser,
             m_axis_tlast => conv5_screener1_tlast,
+            load_mode_i => load_mode,
+            soft_reset_i => soft_reset,
+            axil_wr_addr => conv5_wr_addr,
+            axil_wr_data => conv5_wr_data,
+            axil_wr_en => conv5_wr_en,
             d_output => conv5_debug
+        );
+    reg_bank : entity xil_defaultlib.Network_Reg_Bank
+        generic map(
+            AXIL_DATA_WIDTH_G => 32,
+            AXIL_ADDR_WIDTH_G => 32,
+            MEM_WORD_WIDTH_G => 72 -- This is fixed for UltraRAM
+        )
+        port map(
+            -- CONTROL Register
+            load_mode_o => load_mode,
+            soft_reset_o => soft_reset,
+            enable_operation_o => enable_operation,
+
+            -- Memory interface signals
+            conv1_wr_en => conv1_wr_en,
+            conv1_wr_addr => conv1_wr_addr,
+            conv1_wr_data => conv1_wr_data,
+            conv2_wr_en => conv2_wr_en,
+            conv2_wr_addr => conv2_wr_addr,
+            conv2_wr_data => conv2_wr_data,
+            conv3_wr_en => conv3_wr_en,
+            conv3_wr_addr => conv3_wr_addr,
+            conv3_wr_data => conv3_wr_data,
+            conv4_wr_en => conv4_wr_en,
+            conv4_wr_addr => conv4_wr_addr,
+            conv4_wr_data => conv4_wr_data,
+            conv5_wr_en => conv5_wr_en,
+            conv5_wr_addr => conv5_wr_addr,
+            conv5_wr_data => conv5_wr_data,
+
+            -- Slave AXI4-Lite Interface
+            s_axi_aclk => s_axi_aclk,
+            s_axi_aresetn => s_axi_aresetn,
+            s_axi_awaddr => s_axi_awaddr,
+            s_axi_awprot => s_axi_awprot,
+            s_axi_awvalid => s_axi_awvalid,
+            s_axi_awready => s_axi_awready,
+            s_axi_wdata => s_axi_wdata,
+            s_axi_wstrb => s_axi_wstrb,
+            s_axi_wvalid => s_axi_wvalid,
+            s_axi_wready => s_axi_wready,
+            s_axi_bresp => s_axi_bresp,
+            s_axi_bvalid => s_axi_bvalid,
+            s_axi_bready => s_axi_bready,
+            s_axi_araddr => s_axi_araddr,
+            s_axi_arprot => s_axi_arprot,
+            s_axi_arvalid => s_axi_arvalid,
+            s_axi_arready => s_axi_arready,
+            s_axi_rdata => s_axi_rdata,
+            s_axi_rresp => s_axi_rresp,
+            s_axi_rvalid => s_axi_rvalid,
+            s_axi_rready => s_axi_rready
         );
 end rtl;

@@ -26,8 +26,9 @@ package weights_pkg is
     constant CONV1_FRAME_HEIGHT : positive := 128;
     constant CONV1_CONCURRENT_KERNELS : positive := 4;
     constant CONV1_TDATA_WIDTH : positive := 256;
+    constant CONV1_MEM_DEPTH : positive := CONV1_CHAN_INPUT * CONV1_CHAN_OUTPUT;
 
-    type conv1_mem_t is array (0 to 32 - 1) of std_logic_vector(CONV1_CHAN_INPUT * CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    type conv1_mem_t is array (0 to CONV1_MEM_DEPTH - 1) of std_logic_vector(CONV1_CHAN_INPUT * CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
     --------------------------------------------------------------------------------
     -- Maxpool 1
     --------------------------------------------------------------------------------
@@ -130,7 +131,8 @@ package weights_pkg is
     constant CONV5_MEMBRANE_POTENTIAL_THRESHOLD : positive := 511;
     constant CONV5_MEMBRANE_POTENTIAL_WIDTH : positive := integer(ceil(log2(real(CONV5_MEMBRANE_POTENTIAL_THRESHOLD)))) + 1; -- +1 to account for the sign
     type conv5_full_t is array (0 to 255) of std_logic_vector(18431 downto 0);
-    type conv5_mem_t is array (0 to CONV5_CHAN_OUTPUT * CONV5_CHAN_INPUT - 1) of std_logic_vector(CONV5_PRECISION * CONV5_KERNEL_SIZE ** 2 - 1 downto 0);
+    constant CONV5_MEM_DEPTH : positive := CONV5_CHAN_OUTPUT * CONV5_CHAN_INPUT;
+    type conv5_mem_t is array (0 to CONV5_MEM_DEPTH - 1) of std_logic_vector(CONV5_PRECISION * CONV5_KERNEL_SIZE ** 2 - 1 downto 0);
     function to_conv5_mem(w : conv5_full_t) return conv5_mem_t;
 
     subtype conv5_neuron_potential_t is signed(CONV5_MEMBRANE_POTENTIAL_WIDTH - 1 downto 0);
