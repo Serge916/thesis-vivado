@@ -47,8 +47,8 @@ begin
         if rising_edge(clk) then
             if en = '1' then
                 dout_q <= rom(to_integer(unsigned(addr)));
-            else
-                dout_q <= (others => '0');
+                -- else
+                --     dout_q <= (others => '0');
             end if;
         end if;
     end process;
@@ -73,22 +73,22 @@ entity Conv5_Neuron_Mem is
         -- Input
         wr_addr : in std_logic_vector(CONV5_NEURON_ADDR_WIDTH - 1 downto 0);
         wr_en : in std_logic;
-        din : in conv5_neuron_potential_t;
+        din : in conv5_neuron_word_t;
         -- Output
         rd_en : in std_logic;
-        dout : out conv5_neuron_potential_t;
+        dout : out conv5_neuron_word_t;
         rd_addr : in std_logic_vector(CONV5_NEURON_ADDR_WIDTH - 1 downto 0)
     );
 end entity Conv5_Neuron_Mem;
 
 architecture rtl of Conv5_Neuron_Mem is
 
-    signal mem : conv5_neuron_mem_t := (others => (others => '0'));
+    signal mem : conv5_neuron_mem_t := (others => (others => to_signed(0, conv5_neuron_potential_t'length)));
 
     attribute ram_style : string;
     attribute ram_style of mem : signal is "block";
 
-    signal dout_q : conv5_neuron_potential_t;
+    signal dout_q : conv5_neuron_word_t;
 
 begin
 
@@ -120,8 +120,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity Conv5_Layer is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 64 -- 128 per line * 2 input channels
+        S_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
+        M_AXIS_TDATA_WIDTH_G : positive := 8 -- 128 per line * 2 input channels
     );
     port (
         -- Clock and Reset
@@ -209,6 +209,8 @@ architecture rtl of Conv5_Layer is
     type output_line_buffer_t is array (0 to CONV5_CONCURRENT_KERNELS - 1) of std_logic_vector(CONV5_FRAME_WIDTH - 1 downto 0);
     signal output_line_buffer : output_line_buffer_t;
     subtype accumulate_t is signed(CONV5_INTERMEDIATE_WIDTH_C - 1 downto 0);
+    subtype intermediate_t is signed(CONV5_INTERMEDIATE_WIDTH_C - 1 downto 0);
+    type intermediate_reg_t is array (0 to CONV5_CONCURRENT_KERNELS - 1) of intermediate_t;
     signal convolution_col_idx : integer range 0 to CONV5_FRAME_WIDTH - 1;
     signal remaining_operations : natural range 0 to CONV5_CHAN_INPUT;
     type accumulate_reg_t is array (0 to CONV5_CONCURRENT_KERNELS - 1) of accumulate_t;
@@ -221,6 +223,7 @@ architecture rtl of Conv5_Layer is
     signal operation_fsm : operation_fsm_t;
     signal pipeline_issue_idx : natural range 0 to CONV5_CHAN_INPUT := 0;
     signal pipeline_retire_cnt : natural range 0 to CONV5_CHAN_INPUT := 0;
+
     -- Signals for convolution pipeline
     signal line_buffer_operation : channel_line_buffer_t;
     signal kernel_buffer_operation : channel_kernel_buffer_t;
@@ -253,8 +256,8 @@ architecture rtl of Conv5_Layer is
     signal neuron_rd_en : std_logic := '0';
     signal neuron_rd_addr : std_logic_vector(CONV5_NEURON_ADDR_WIDTH - 1 downto 0);
     signal neuron_wr_addr : std_logic_vector(CONV5_NEURON_ADDR_WIDTH - 1 downto 0);
-    signal neuron_dout : conv5_neuron_potential_t;
-    signal neuron_din : conv5_neuron_potential_t;
+    signal neuron_dout : conv5_neuron_word_t;
+    signal neuron_din : conv5_neuron_word_t;
 
     -- Varied debug signals
 
@@ -289,12 +292,13 @@ begin
         else
             m_axis_tlast <= '0';
         end if;
+        m_axis_tuser <= axi_out_tuser;
     end process;
 
     ingress_lines : process (aclk)
         variable channel_id : natural range 0 to CONV5_CHAN_INPUT - 1 := 0;
         -- variable row_id : natural range 0 to CONV5_FRAME_HEIGHT - 1 := 0;
-        variable clean_up_lines : natural range 0 to CONV5_CHAN_INPUT - 1;
+        variable clean_up_lines : natural range 0 to CONV5_KERNEL_SIZE - 1;
     begin
         if rising_edge(aclk) then
             -- By default, do not accept data in
@@ -405,7 +409,8 @@ begin
 
     convolution : process (aclk)
         variable temp_accumulation : signed(CONV5_INTERMEDIATE_WIDTH_C - 1 downto 0);
-        variable residual_connection : signed(CONV5_INTERMEDIATE_WIDTH_C - 1 downto 0);
+        variable residual_connection : intermediate_reg_t;
+        variable channel_residual_idx : natural range 0 to CONV5_CHAN_OUTPUT - 1;
     begin
         if rising_edge(aclk) then
             convolution_rdy <= '0';
@@ -440,6 +445,9 @@ begin
 
                             if pipeline_retire_cnt = 1 then
                                 operation_fsm <= READ_MEM;
+                                -- batch*Kernels : out_chan. out_chan*width*row+col
+                                neuron_rd_en <= '1';
+                                neuron_rd_addr <= std_logic_vector(to_unsigned(batch_idx * CONV5_FRAME_WIDTH + out_y * CONV5_FRAME_WIDTH * CONV5_CHAN_OUTPUT/CONV5_CONCURRENT_KERNELS + convolution_col_idx, CONV5_NEURON_ADDR_WIDTH));
                             end if;
 
                             pipeline_retire_cnt <= pipeline_retire_cnt - 1;
@@ -447,34 +455,36 @@ begin
 
                     when READ_MEM =>
                         -- fetch value from memory
-                        -- batch*Kernels : out_chan. out_chan*width*row+col
-                        neuron_rd_en <= '1';
-                        neuron_rd_addr <= std_logic_vector(to_unsigned(batch_idx * CONV5_CONCURRENT_KERNELS * CONV5_FRAME_WIDTH + out_y * CONV5_FRAME_WIDTH * CONV5_CHAN_OUTPUT + convolution_col_idx, CONV5_NEURON_ADDR_WIDTH));
                         operation_fsm <= WRITE_BACK;
 
                     when WRITE_BACK =>
                         -- Assign the output pixel its binary value
                         neuron_wr_en <= '1';
-                        neuron_wr_addr <= std_logic_vector(to_unsigned(batch_idx * CONV5_CONCURRENT_KERNELS * CONV5_FRAME_WIDTH + out_y * CONV5_FRAME_WIDTH * CONV5_CHAN_OUTPUT + convolution_col_idx, CONV5_NEURON_ADDR_WIDTH));
-                        -- Divide by 2 and add the convolution result
-                        if line_buffer(batch_idx)(1)(convolution_col_idx + 1) = '1' then
-                            residual_connection := to_signed(256, CONV5_INTERMEDIATE_WIDTH_C);
-                        else
-                            residual_connection := to_signed(0, CONV5_INTERMEDIATE_WIDTH_C);
-                        end if;
+                        neuron_wr_addr <= std_logic_vector(to_unsigned(batch_idx * CONV5_FRAME_WIDTH + out_y * CONV5_FRAME_WIDTH * CONV5_CHAN_OUTPUT/CONV5_CONCURRENT_KERNELS + convolution_col_idx, CONV5_NEURON_ADDR_WIDTH));
 
-                        temp_accumulation := shift_right(neuron_dout, 1) + resize(value(0), temp_accumulation'length) + residual_connection;
+                        for k in 0 to CONV5_CONCURRENT_KERNELS - 1 loop
+                            channel_residual_idx := batch_idx * CONV5_CONCURRENT_KERNELS + k;
+                            -- Divide by 2 and add the convolution result
+                            if line_buffer(channel_residual_idx)(1)(convolution_col_idx + 1) = '1' then
+                                residual_connection(k) := to_signed(256, CONV5_INTERMEDIATE_WIDTH_C);
+                            else
+                                residual_connection(k) := to_signed(0, CONV5_INTERMEDIATE_WIDTH_C);
+                            end if;
+
+                            temp_accumulation := shift_right(neuron_dout(k), 1) + resize(value(k), temp_accumulation'length) + residual_connection(k);
+                            output_line_buffer(k)(convolution_col_idx) <= '0';
+
+                            if temp_accumulation < 0 then
+                                neuron_din(k) <= to_signed(0, CONV5_MEMBRANE_POTENTIAL_WIDTH);
+                            elsif temp_accumulation > to_signed(CONV5_MEMBRANE_POTENTIAL_THRESHOLD, temp_accumulation'length) then
+                                neuron_din(k) <= to_signed(0, CONV5_MEMBRANE_POTENTIAL_WIDTH);
+                                output_line_buffer(k)(convolution_col_idx) <= '1';
+                            else
+                                neuron_din(k) <= resize(temp_accumulation, CONV5_MEMBRANE_POTENTIAL_WIDTH);
+                            end if;
+                        end loop;
+                        -- Reset value for next cycle
                         value <= (others => to_signed(0, CONV5_INTERMEDIATE_WIDTH_C));
-                        output_line_buffer(0)(convolution_col_idx) <= '0';
-
-                        if temp_accumulation < 0 then
-                            neuron_din <= to_signed(0, CONV5_MEMBRANE_POTENTIAL_WIDTH);
-                        elsif temp_accumulation > to_signed(CONV5_MEMBRANE_POTENTIAL_THRESHOLD, temp_accumulation'length) then
-                            neuron_din <= to_signed(0, CONV5_MEMBRANE_POTENTIAL_WIDTH);
-                            output_line_buffer(0)(convolution_col_idx) <= '1';
-                        else
-                            neuron_din <= resize(temp_accumulation, CONV5_MEMBRANE_POTENTIAL_WIDTH);
-                        end if;
 
                         -- Move on to the next column or finish
                         if convolution_col_idx < CONV5_FRAME_WIDTH - 1 then
@@ -595,7 +605,7 @@ begin
                     axi_out_active <= '1';
                     channel_id := 0;
                     m_axis_tdata <= output_line_buffer(0);
-                    m_axis_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV5_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
+                    axi_out_tuser <= std_logic_vector(to_unsigned(out_y, ROW_ID_WIDTH_C)) & std_logic_vector(to_unsigned(0 + batch_idx * CONV5_CONCURRENT_KERNELS, CHANNEL_ID_WIDTH_C)); -- I keep the 0 for readability
                     axi_out_valid <= '1';
                 end if;
             end if;

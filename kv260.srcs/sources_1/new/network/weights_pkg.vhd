@@ -124,7 +124,7 @@ package weights_pkg is
     constant CONV5_INTERMEDIATE_WIDTH_C : positive := integer(ceil(log2(real((2 ** CONV5_PRECISION) * 9 * CONV5_CHAN_INPUT)))); -- Biggest value if all channels were at max
     constant CONV5_FRAME_WIDTH : positive := MAXPOOL4_OUTPUT_WIDTH;
     constant CONV5_FRAME_HEIGHT : positive := MAXPOOL4_OUTPUT_HEIGHT;
-    constant CONV5_CONCURRENT_KERNELS : positive := 1;
+    constant CONV5_CONCURRENT_KERNELS : positive := 4;
     constant CONV5_TDATA_WIDTH : positive := MAXPOOL4_OUTPUT_WIDTH;
     constant CONV5_BUFFER_ADDR_WIDTH_C : positive := integer(ceil(log2(real(CONV5_KERNEL_SIZE * CONV5_CHAN_INPUT))));
     constant CONV5_MEMBRANE_POTENTIAL_THRESHOLD : positive := 511;
@@ -134,8 +134,9 @@ package weights_pkg is
     function to_conv5_mem(w : conv5_full_t) return conv5_mem_t;
 
     subtype conv5_neuron_potential_t is signed(CONV5_MEMBRANE_POTENTIAL_WIDTH - 1 downto 0);
-    type conv5_neuron_mem_t is array(0 to CONV5_FRAME_WIDTH * CONV5_FRAME_HEIGHT * CONV5_CHAN_OUTPUT - 1) of conv5_neuron_potential_t;
-    constant CONV5_NEURON_ADDR_WIDTH : positive := integer(ceil(log2(real(CONV5_FRAME_WIDTH * CONV5_FRAME_HEIGHT * CONV5_CHAN_OUTPUT))));
+    type conv5_neuron_word_t is array(0 to CONV5_CONCURRENT_KERNELS - 1) of conv5_neuron_potential_t;
+    type conv5_neuron_mem_t is array(0 to CONV5_FRAME_WIDTH * CONV5_FRAME_HEIGHT * CONV5_CHAN_OUTPUT / CONV5_CONCURRENT_KERNELS - 1) of conv5_neuron_word_t;
+    constant CONV5_NEURON_ADDR_WIDTH : positive := integer(ceil(log2(real(CONV5_FRAME_WIDTH * CONV5_FRAME_HEIGHT * CONV5_CHAN_OUTPUT / CONV5_CONCURRENT_KERNELS))));
     --------------------------------------------------------------------------------
     -- Screener 1
     --------------------------------------------------------------------------------
