@@ -216,12 +216,12 @@ begin
                         if s_axis_tvalid = '1' and axi_in_ready = '1' then
                             for chan in 0 to CONV1_CHAN_INPUT - 1 loop
                                 -- Move one line down the buffer.
-                                line_buffer(chan)(2) <= line_buffer(chan)(1);
-                                line_buffer(chan)(1) <= line_buffer(chan)(0);
+                                line_buffer(chan)(0) <= line_buffer(chan)(1);
+                                line_buffer(chan)(1) <= line_buffer(chan)(2);
                                 -- Insert the incoming line
-                                line_buffer(chan)(0)(0) <= '0';
-                                line_buffer(chan)(0)(CONV1_FRAME_WIDTH downto 1) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
-                                line_buffer(chan)(0)(CONV1_FRAME_WIDTH + 1) <= '0';
+                                line_buffer(chan)(2)(0) <= '0';
+                                line_buffer(chan)(2)(CONV1_FRAME_WIDTH downto 1) <= s_axis_tdata(CONV1_FRAME_WIDTH * (chan + 1) - 1 downto CONV1_FRAME_WIDTH * chan);
+                                line_buffer(chan)(2)(CONV1_FRAME_WIDTH + 1) <= '0';
                             end loop;
 
                             if remaining_lines = 1 then

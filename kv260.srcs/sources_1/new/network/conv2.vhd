@@ -230,10 +230,10 @@ begin
                     -- Insert last row padding
                     if pad_bottom = '1' then
                         for chan in 0 to (CONV2_CHAN_INPUT - 1) loop
-                            line_buffer(chan)(2) <= line_buffer(chan)(1);
-                            line_buffer(chan)(1) <= line_buffer(chan)(0);
+                            line_buffer(chan)(0) <= line_buffer(chan)(1);
+                            line_buffer(chan)(1) <= line_buffer(chan)(2);
                             -- Insert an empty line
-                            line_buffer(chan)(0) <= (others => '0');
+                            line_buffer(chan)(2) <= (others => '0');
                         end loop;
                         remaining_lines <= 0;
                     else
@@ -244,10 +244,10 @@ begin
                             channel_id := to_integer(unsigned(s_axis_tuser(CHANNEL_ID_WIDTH_C - 1 downto 0)));
                             -- row_id := to_integer(unsigned(s_axis_tuser(ROW_ID_WIDTH_C + CHANNEL_ID_WIDTH_C - 1 downto CHANNEL_ID_WIDTH_C)));
                             -- Move one line down the buffer.
-                            line_buffer(channel_id)(2) <= line_buffer(channel_id)(1);
-                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(0);
+                            line_buffer(channel_id)(0) <= line_buffer(channel_id)(1);
+                            line_buffer(channel_id)(1) <= line_buffer(channel_id)(2);
                             -- Insert the incoming line
-                            line_buffer(channel_id)(0) <= '0' & s_axis_tdata & '0';
+                            line_buffer(channel_id)(2) <= '0' & s_axis_tdata & '0';
                             remaining_lines <= remaining_lines - 1;
                         end if;
                     end if;
