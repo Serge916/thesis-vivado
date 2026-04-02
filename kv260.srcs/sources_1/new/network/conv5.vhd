@@ -21,7 +21,9 @@ entity Conv5_ROM is
         -- Port B: Layer
         rd_en : in std_logic;
         rd_addr : in std_logic_vector(CONV5_ADDR_WIDTH_C - 1 downto 0);
-        dout : out std_logic_vector(CONV5_KERNEL_SIZE ** 2 * CONV5_PRECISION - 1 downto 0)
+        dout : out std_logic_vector(CONV5_KERNEL_SIZE ** 2 * CONV5_PRECISION - 1 downto 0);
+        -- Signal
+        valid : out std_logic
     );
 end entity Conv5_ROM;
 
@@ -47,6 +49,7 @@ begin
     process (clk)
     begin
         if rising_edge(clk) then
+            valid <= rd_en and not wr_en;
             if wr_en = '1' then
                 rom(to_integer(unsigned(wr_addr))) <= din;
             elsif rd_en = '1' then
@@ -199,6 +202,7 @@ architecture rtl of Conv5_Layer is
     signal weight_batch_idx : integer range 0 to CONV5_CHAN_OUTPUT/CONV5_CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
+    signal weight_load_active : std_logic := '0';
     signal weight_valid : std_logic := '0';
 
     -- Signals for Line Fetch
@@ -281,7 +285,8 @@ begin
             dout => conv5_dout,
             wr_en => axil_wr_en,
             wr_addr => axil_wr_addr,
-            din => axil_wr_data
+            din => axil_wr_data,
+            valid => weight_valid
         );
     conv5_neuron_mem : entity xil_defaultlib.Conv5_Neuron_Mem
         port map(
@@ -393,28 +398,29 @@ begin
                 write_kernels := CONV5_CONCURRENT_KERNELS * CONV5_CHAN_INPUT - 1;
                 conv5_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV5_CONCURRENT_KERNELS * CONV5_CHAN_INPUT) + (CONV5_CONCURRENT_KERNELS * CONV5_CHAN_INPUT) - 1, conv5_addr'length));
                 conv5_en <= '1';
+                weight_load_active <= '1';
                 -- Load next address
-            elsif read_kernels > 0 and weight_load_init = '0' then
-                read_kernels := read_kernels - 1;
+            elsif weight_load_active = '1' then
+                if read_kernels > 0 then
+                    read_kernels := read_kernels - 1;
 
-                conv5_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV5_CONCURRENT_KERNELS * CONV5_CHAN_INPUT) + read_kernels, conv5_addr'length));
-                conv5_en <= '1';
-                weight_valid <= '1';
-            end if;
+                    conv5_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV5_CONCURRENT_KERNELS * CONV5_CHAN_INPUT) + read_kernels, conv5_addr'length));
+                    conv5_en <= '1';
+                end if;
 
-            -- Split the word into the several weights
-            if weight_valid = '1' then
-                for j in 0 to (CONV5_KERNEL_SIZE ** 2) - 1 loop
-                    -- input = write/concurrent
-                    -- output = write % concurrent
-                    kernel_buffer(write_kernels mod CONV5_CHAN_INPUT)(write_kernels/CONV5_CHAN_INPUT)(j) <= conv5_dout((j + 1) * CONV5_PRECISION - 1 downto j * CONV5_PRECISION);
-                end loop;
-                if write_kernels = 0 then
-                    conv5_en <= '0';
-                    weight_valid <= '0';
-                    weight_load_rdy <= '1';
-                else
-                    write_kernels := write_kernels - 1;
+                -- Split the word into the several weights
+                if weight_valid = '1' then
+                    for j in 0 to (CONV5_KERNEL_SIZE ** 2) - 1 loop
+                        -- input = write/concurrent
+                        -- output = write % concurrent
+                        kernel_buffer(write_kernels mod CONV5_CHAN_INPUT)(write_kernels/CONV5_CHAN_INPUT)(j) <= conv5_dout((j + 1) * CONV5_PRECISION - 1 downto j * CONV5_PRECISION);
+                    end loop;
+                    if write_kernels = 0 then
+                        conv5_en <= '0';
+                        weight_load_rdy <= '1';
+                    else
+                        write_kernels := write_kernels - 1;
+                    end if;
                 end if;
             end if;
         end if;

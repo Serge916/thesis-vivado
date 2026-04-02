@@ -19,7 +19,9 @@ entity Conv1_ROM is
         en : in std_logic;
         addr : in std_logic_vector(CONV1_ADDR_WIDTH_C - 1 downto 0);
         -- Output
-        dout : out std_logic_vector(CONV1_KERNEL_SIZE ** 2 * CONV1_PRECISION - 1 downto 0)
+        dout : out std_logic_vector(CONV1_KERNEL_SIZE ** 2 * CONV1_PRECISION - 1 downto 0);
+        -- Signal
+        valid : out std_logic
     );
 end entity Conv1_ROM;
 
@@ -45,10 +47,9 @@ begin
     read : process (clk)
     begin
         if rising_edge(clk) then
+            valid <= en;
             if en = '1' then
                 dout_q <= rom(to_integer(unsigned(addr)));
-            else
-                dout_q <= (others => '0');
             end if;
         end if;
     end process;
@@ -134,6 +135,7 @@ architecture rtl of Conv1_Layer is
     signal weight_batch_idx : integer range 0 to CONV1_CHAN_OUTPUT/CONV1_CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
+    signal weight_load_active : std_logic := '0';
     signal weight_valid : std_logic := '0';
 
     -- Signals for Line Fetch
@@ -201,7 +203,8 @@ begin
             clk => aclk,
             en => conv1_en,
             addr => conv1_addr,
-            dout => conv1_dout
+            dout => conv1_dout,
+            valid => weight_valid
         );
     s_axis_tready <= axi_in_ready;
     m_axis_tvalid <= axi_out_valid;
@@ -289,28 +292,29 @@ begin
                 write_kernels := CONV1_CONCURRENT_KERNELS * CONV1_CHAN_INPUT - 1;
                 conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV1_CONCURRENT_KERNELS * CONV1_CHAN_INPUT) + (CONV1_CONCURRENT_KERNELS * CONV1_CHAN_INPUT) - 1, conv1_addr'length));
                 conv1_en <= '1';
+                weight_load_active <= '1';
                 -- Load next address
-            elsif read_kernels > 0 and weight_load_init = '0' then
-                read_kernels := read_kernels - 1;
+            elsif weight_load_active = '1' then
+                if read_kernels > 0 then
+                    read_kernels := read_kernels - 1;
 
-                conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV1_CONCURRENT_KERNELS * CONV1_CHAN_INPUT) + read_kernels, conv1_addr'length));
-                conv1_en <= '1';
-                weight_valid <= '1';
-            end if;
+                    conv1_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV1_CONCURRENT_KERNELS * CONV1_CHAN_INPUT) + read_kernels, conv1_addr'length));
+                    conv1_en <= '1';
+                end if;
 
-            -- Split the word into the several weights
-            if weight_valid = '1' then
-                for j in 0 to (CONV1_KERNEL_SIZE ** 2) - 1 loop
-                    -- input = write/concurrent
-                    -- output = write % concurrent
-                    kernel_buffer(write_kernels mod CONV1_CHAN_INPUT)(write_kernels/CONV1_CHAN_INPUT)(j) <= conv1_dout((j + 1) * CONV1_PRECISION - 1 downto j * CONV1_PRECISION);
-                end loop;
-                if write_kernels = 0 then
-                    conv1_en <= '0';
-                    weight_valid <= '0';
-                    weight_load_rdy <= '1';
-                else
-                    write_kernels := write_kernels - 1;
+                -- Split the word into the several weights
+                if weight_valid = '1' then
+                    for j in 0 to (CONV1_KERNEL_SIZE ** 2) - 1 loop
+                        -- input = write/concurrent
+                        -- output = write % concurrent
+                        kernel_buffer(write_kernels mod CONV1_CHAN_INPUT)(write_kernels/CONV1_CHAN_INPUT)(j) <= conv1_dout((j + 1) * CONV1_PRECISION - 1 downto j * CONV1_PRECISION);
+                    end loop;
+                    if write_kernels = 0 then
+                        conv1_en <= '0';
+                        weight_load_rdy <= '1';
+                    else
+                        write_kernels := write_kernels - 1;
+                    end if;
                 end if;
             end if;
         end if;

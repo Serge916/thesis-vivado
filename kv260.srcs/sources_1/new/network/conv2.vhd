@@ -19,7 +19,9 @@ entity Conv2_ROM is
         en : in std_logic;
         addr : in std_logic_vector(CONV2_ADDR_WIDTH_C - 1 downto 0);
         -- Output
-        dout : out std_logic_vector(CONV2_KERNEL_SIZE ** 2 * CONV2_PRECISION - 1 downto 0)
+        dout : out std_logic_vector(CONV2_KERNEL_SIZE ** 2 * CONV2_PRECISION - 1 downto 0);
+        -- Signal
+        valid : out std_logic
     );
 end entity Conv2_ROM;
 
@@ -45,10 +47,9 @@ begin
     read : process (clk)
     begin
         if rising_edge(clk) then
+            valid <= en;
             if en = '1' then
                 dout_q <= rom(to_integer(unsigned(addr)));
-            else
-                dout_q <= (others => '0');
             end if;
         end if;
     end process;
@@ -66,8 +67,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity Conv2_Layer is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 64; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 64 -- 128 per line * 2 input channels
+        S_AXIS_TDATA_WIDTH_G : positive := 128;
+        M_AXIS_TDATA_WIDTH_G : positive := 128
     );
     port (
         -- Clock and Reset
@@ -134,6 +135,7 @@ architecture rtl of Conv2_Layer is
     signal weight_batch_idx : integer range 0 to CONV2_CHAN_OUTPUT/CONV2_CONCURRENT_KERNELS - 1 := 0;
     signal weight_load_rdy : std_logic := '0';
     signal weight_load_init : std_logic := '0';
+    signal weight_load_active : std_logic := '0';
     signal weight_valid : std_logic := '0';
 
     -- Signals for Line Fetch
@@ -201,7 +203,8 @@ begin
             clk => aclk,
             en => conv2_en,
             addr => conv2_addr,
-            dout => conv2_dout
+            dout => conv2_dout,
+            valid => weight_valid
         );
     s_axis_tready <= axi_in_ready;
     m_axis_tvalid <= axi_out_valid;
@@ -289,28 +292,29 @@ begin
                 write_kernels := CONV2_CONCURRENT_KERNELS * CONV2_CHAN_INPUT - 1;
                 conv2_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV2_CONCURRENT_KERNELS * CONV2_CHAN_INPUT) + (CONV2_CONCURRENT_KERNELS * CONV2_CHAN_INPUT) - 1, conv2_addr'length));
                 conv2_en <= '1';
+                weight_load_active <= '1';
                 -- Load next address
-            elsif read_kernels > 0 and weight_load_init = '0' then
-                read_kernels := read_kernels - 1;
+            elsif weight_load_active = '1' then
+                if read_kernels > 0 then
+                    read_kernels := read_kernels - 1;
 
-                conv2_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV2_CONCURRENT_KERNELS * CONV2_CHAN_INPUT) + read_kernels, conv2_addr'length));
-                conv2_en <= '1';
-                weight_valid <= '1';
-            end if;
+                    conv2_addr <= std_logic_vector(to_unsigned(weight_batch_idx * (CONV2_CONCURRENT_KERNELS * CONV2_CHAN_INPUT) + read_kernels, conv2_addr'length));
+                    conv2_en <= '1';
+                end if;
 
-            -- Split the word into the several weights
-            if weight_valid = '1' then
-                for j in 0 to (CONV2_KERNEL_SIZE ** 2) - 1 loop
-                    -- input = write/concurrent
-                    -- output = write % concurrent
-                    kernel_buffer(write_kernels mod CONV2_CHAN_INPUT)(write_kernels/CONV2_CHAN_INPUT)(j) <= conv2_dout((j + 1) * CONV2_PRECISION - 1 downto j * CONV2_PRECISION);
-                end loop;
-                if write_kernels = 0 then
-                    conv2_en <= '0';
-                    weight_valid <= '0';
-                    weight_load_rdy <= '1';
-                else
-                    write_kernels := write_kernels - 1;
+                -- Split the word into the several weights
+                if weight_valid = '1' then
+                    for j in 0 to (CONV2_KERNEL_SIZE ** 2) - 1 loop
+                        -- input = write/concurrent
+                        -- output = write % concurrent
+                        kernel_buffer(write_kernels mod CONV2_CHAN_INPUT)(write_kernels/CONV2_CHAN_INPUT)(j) <= conv2_dout((j + 1) * CONV2_PRECISION - 1 downto j * CONV2_PRECISION);
+                    end loop;
+                    if write_kernels = 0 then
+                        conv2_en <= '0';
+                        weight_load_rdy <= '1';
+                    else
+                        write_kernels := write_kernels - 1;
+                    end if;
                 end if;
             end if;
         end if;
