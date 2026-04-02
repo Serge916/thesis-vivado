@@ -25,10 +25,12 @@ package weights_pkg is
     constant CONV1_FRAME_WIDTH : positive := 128;
     constant CONV1_FRAME_HEIGHT : positive := 128;
     constant CONV1_CONCURRENT_KERNELS : positive := 4;
-    constant CONV1_TDATA_WIDTH : positive := 256;
+    constant CONV1_TDATA_WIDTH : positive := 128;
     constant CONV1_MEM_DEPTH : positive := CONV1_CHAN_INPUT * CONV1_CHAN_OUTPUT;
 
-    type conv1_mem_t is array (0 to CONV1_MEM_DEPTH - 1) of std_logic_vector(CONV1_CHAN_INPUT * CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    type conv1_full_t is array (0 to 31) of std_logic_vector(143 downto 0);
+    type conv1_mem_t is array (0 to CONV1_MEM_DEPTH - 1) of std_logic_vector(CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2 - 1 downto 0);
+    function to_conv1_mem(w : conv1_full_t) return conv1_mem_t;
     --------------------------------------------------------------------------------
     -- Maxpool 1
     --------------------------------------------------------------------------------
@@ -152,6 +154,18 @@ package weights_pkg is
 end package;
 
 package body weights_pkg is
+    function to_conv1_mem(w : conv1_full_t) return conv1_mem_t is
+        variable r : conv1_mem_t;
+        constant KERNEL_BITS_C : integer := CONV1_PRECISION * CONV1_KERNEL_SIZE ** 2;
+    begin
+        for oc in 0 to CONV1_CHAN_OUTPUT - 1 loop
+            for ic in 0 to CONV1_CHAN_INPUT - 1 loop
+                r(oc * CONV1_CHAN_INPUT + ic) :=
+                w(oc)((ic + 1) * KERNEL_BITS_C - 1 downto ic * KERNEL_BITS_C);
+            end loop;
+        end loop;
+        return r;
+    end function;
 
     function to_conv2_mem(w : conv2_full_t) return conv2_mem_t is
         variable r : conv2_mem_t;

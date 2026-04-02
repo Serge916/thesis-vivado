@@ -8,8 +8,8 @@ use xil_defaultlib.weights_pkg.all;
 
 entity SpikeVision is
     generic (
-        S_AXIS_TDATA_WIDTH_G : positive := 256; -- 128 per line * 2 input channels
-        M_AXIS_TDATA_WIDTH_G : positive := 8; -- 128 per line * 2 input channels
+        S_AXIS_TDATA_WIDTH_G : positive := 128;
+        M_AXIS_TDATA_WIDTH_G : positive := 8;
         AXIS_TUSER_WIDTH_G : positive := 15;
         AXIL_ADDR_WIDTH_G : positive := 32;
         AXIL_DATA_WIDTH_G : positive := 32;
@@ -179,8 +179,8 @@ begin
 
     conv1 : entity xil_defaultlib.Conv1_Layer
         generic map(
-            S_AXIS_TDATA_WIDTH_G => CONV1_TDATA_WIDTH, -- 128 per line * 2 input channels
-            M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH -- 128 per line * 2 input channels
+            S_AXIS_TDATA_WIDTH_G => CONV1_TDATA_WIDTH,
+            M_AXIS_TDATA_WIDTH_G => MAXPOOL1_TDATA_WIDTH
         )
         port map(
             aclk => aclk,

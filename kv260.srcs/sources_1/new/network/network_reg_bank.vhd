@@ -69,7 +69,7 @@ architecture rtl of Network_Reg_Bank is
 
     -- Constant declarations
     constant ADDR_LSB_C : integer := (AXIL_DATA_WIDTH_G/32) + 1;
-    constant ADDR_MSB_C : integer := 5;
+    constant ADDR_MSB_C : integer := 8;
     -- AXI4LITE signals
     signal axi_awaddr : std_logic_vector(AXIL_ADDR_WIDTH_G - 1 downto 0);
     signal axi_awready : std_logic;

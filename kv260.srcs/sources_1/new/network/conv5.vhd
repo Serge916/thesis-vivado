@@ -27,8 +27,7 @@ end entity Conv5_ROM;
 
 architecture rtl of Conv5_ROM is
 
-    signal rom : conv5_mem_t;
-    -- signal rom : conv5_mem_t := to_conv5_mem(CONV5_WEIGHTS);
+    signal rom : conv5_mem_t := to_conv5_mem(CONV5_WEIGHTS);
     -- constant WEIGHT_INIT : std_logic_vector(8 * 9 - 1 downto 0) := (
     -- x"7F" & x"7F" & x"7F" &
     -- x"7F" & x"7F" & x"7F" &

@@ -6,7 +6,7 @@ use xil_defaultlib.weights_pkg.all;
 
 package weights_value_pkg is
 
-    constant CONV1_WEIGHTS : conv1_mem_t := (
+    constant CONV1_WEIGHTS : conv1_full_t := (
         0 => x"08A701EED2B3F3FE08" & x"02FC3901D5DBD9CBF8",
         1 => x"0727101D3408E60DD4" & x"401DEBFA4E1E1D202B",
         2 => x"DA01FC1FF3DA0C32D2" & x"EBEBDBEDFCC3D0EAE5",
